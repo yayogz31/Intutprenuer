@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- Privacidad: la página solo puede conectarse a su propio sitio (para descargar el modelo de voz).
-       No puede enviar datos a ningún otro servidor. 'unsafe-eval'/'wasm-unsafe-eval'/blob: los necesita el motor de voz local (WebAssembly). -->
+  <!-- Privacy: the page can only connect to its own site (to download the speech model).
+       It cannot send data to any other server. 'unsafe-eval'/'wasm-unsafe-eval'/blob: are required by the local speech engine (WebAssembly). -->
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
   <meta name="referrer" content="no-referrer">
@@ -17,138 +17,142 @@
       <span class="logo">◉</span>
       <div>
         <h1>Inturpreneur</h1>
-        <small>Asistente de interpretación · sin IA · sin registro</small>
+        <small>Interpreter assistant · no AI · nothing recorded</small>
       </div>
     </div>
 
     <div class="controls">
-      <select id="selLang" title="Idioma que se está escuchando">
-        <option value="auto">Auto (ES + EN)</option>
-        <option value="es-MX">Español (MX)</option>
-        <option value="es-US">Español (US)</option>
-        <option value="es-ES">Español (ES)</option>
+      <select id="selLang" title="Language being spoken">
+        <option value="auto">Auto (EN + ES)</option>
         <option value="en-US">English (US)</option>
+        <option value="es-MX">Spanish (MX)</option>
+        <option value="es-US">Spanish (US)</option>
+        <option value="es-ES">Spanish (ES)</option>
       </select>
-      <button id="btnSwap" class="btn ghost" title="Cambiar idioma: ES → EN → Auto (Alt+L)">ES ⇄ EN</button>
-      <select id="selEngine" title="Motor de reconocimiento de voz">
-        <option value="vosk">Motor local (sin internet)</option>
-        <option value="browser">Motor del navegador (en línea)</option>
+      <button id="btnSwap" class="btn ghost" title="Switch language: ES → EN → Auto (Alt+L)">EN ⇄ ES</button>
+      <select id="selEngine" title="Speech recognition engine">
+        <option value="vosk">Local engine (offline)</option>
+        <option value="browser">Browser engine (online)</option>
       </select>
-      <select id="selSource" title="Fuente de audio">
-        <option value="mic">Micrófono predeterminado</option>
-        <option value="system">Pestaña / audio del sistema</option>
-        <option value="mix">Micrófono + audio del sistema</option>
+      <select id="selSource" title="Audio source">
+        <option value="mic">Default microphone</option>
+        <option value="system">Tab / system audio</option>
+        <option value="mix">Microphone + system audio</option>
       </select>
-      <button id="btnStart" class="btn start">▶ Iniciar</button>
-      <button id="btnPause" class="btn pause" disabled>❚❚ Pausar</button>
-      <button id="btnStop" class="btn stop" disabled>■ Terminar</button>
-      <span id="status" class="status idle">Inactivo</span>
+      <button id="btnStart" class="btn start">▶ Start</button>
+      <button id="btnPause" class="btn pause" disabled>❚❚ Pause</button>
+      <button id="btnStop" class="btn stop" disabled>■ End</button>
+      <span id="status" class="status idle">Idle</span>
       <span id="timer" class="timer">00:00</span>
-      <button id="btnSettings" class="btn ghost" title="Ajustes">⚙</button>
+      <button id="btnSettings" class="btn ghost" title="Settings">⚙</button>
     </div>
   </header>
 
   <div id="notice" class="notice" hidden></div>
 
   <main class="grid">
-    <!-- COLUMNA 1: transcripción -->
+    <!-- COLUMN 1: transcript -->
     <section class="panel col-transcript">
       <div class="panel-head">
-        <h2>Transcripción en vivo</h2>
+        <h2>Live transcript</h2>
         <div id="domainMeter" class="meter">
-          <span data-dom="medico">Médico <b>0%</b></span>
+          <span data-dom="medico">Medical <b>0%</b></span>
           <span data-dom="legal">Legal <b>0%</b></span>
-          <span data-dom="bancario">Bancario <b>0%</b></span>
-          <span data-dom="seguros">Seguros <b>0%</b></span>
+          <span data-dom="bancario">Banking <b>0%</b></span>
+          <span data-dom="seguros">Insurance <b>0%</b></span>
         </div>
       </div>
       <div id="transcript" class="transcript" aria-live="polite">
-        <p class="empty">Presiona <b>Iniciar</b> para comenzar. Nada se guarda: al terminar se borra todo.</p>
+        <p class="empty">Press <b>Start</b> to begin. Nothing is saved: everything is erased when the call ends.</p>
       </div>
       <div id="interim" class="interim"></div>
       <div id="interimTr" class="interim xl"></div>
       <form id="simForm" class="simform" autocomplete="off">
-        <input id="simInput" type="text" placeholder="Probar sin audio: escribe una frase y Enter (p. ej. “no reconozco un cargo de 250 dólares”)">
+        <input id="simInput" type="text" placeholder="Test without audio: type a sentence and press Enter (e.g. “I don't recognize a $250 charge”)">
       </form>
     </section>
 
-    <!-- COLUMNA 2: sugerencias + tarjetas -->
+    <!-- COLUMN 2: suggestions + cards -->
     <section class="panel col-assist">
-      <div class="panel-head"><h2>Sugerencias de respuesta</h2><small>clic = copiar</small></div>
+      <div class="panel-head"><h2>Suggested responses</h2><small>click = copy</small></div>
       <div id="suggestions" class="suggestions">
-        <p class="empty">Aparecerán aquí según lo que se diga.</p>
+        <p class="empty">Suggestions will appear here based on what is said.</p>
       </div>
 
-      <div class="panel-head"><h2>Tarjetas</h2><span><small>clic = copiar</small> <button id="btnAddCard" class="btn ghost tiny" title="Agregar tarjetas propias">+ Tarjeta</button></span></div>
+      <div class="panel-head"><h2>Cards</h2><span><small>click = copy</small> <button id="btnAddCard" class="btn ghost tiny" title="Add your own cards">+ Card</button></span></div>
+      <div id="audience" class="seg" title="Who you are speaking to">
+        <button type="button" data-aud="provider">To Provider · EN</button>
+        <button type="button" data-aud="lep">To LEP · ES</button>
+      </div>
       <div id="cardTabs" class="tabs"></div>
       <div id="cards" class="cards"></div>
     </section>
 
-    <!-- COLUMNA 3: terminología + notas -->
+    <!-- COLUMN 3: terminology + notes -->
     <section class="panel col-side">
-      <div class="panel-head"><h2>Terminología detectada</h2><span id="termCount" class="badge">0</span></div>
-      <div id="terms" class="terms"><p class="empty">Los términos de tu glosario aparecerán aquí al escucharse.</p></div>
-      <input id="glossSearch" class="search" type="search" placeholder="Buscar en el glosario…">
+      <div class="panel-head"><h2>Detected terminology</h2><span id="termCount" class="badge">0</span></div>
+      <div id="terms" class="terms"><p class="empty">Glossary terms will appear here when they are heard.</p></div>
+      <input id="glossSearch" class="search" type="search" placeholder="Search the glossary…">
       <div id="glossResults" class="terms small"></div>
 
       <div class="panel-head">
-        <h2>Notas</h2>
-        <button id="btnCopyNotes" class="btn ghost tiny" title="Copiar notas al portapapeles">Copiar</button>
+        <h2>Notes</h2>
+        <button id="btnCopyNotes" class="btn ghost tiny" title="Copy notes to clipboard">Copy</button>
       </div>
-      <div id="quickData" class="chips" title="Datos detectados: clic para agregar a notas"></div>
-      <textarea id="notes" spellcheck="false" autocomplete="off" placeholder="Notas temporales (se borran al terminar la llamada)"></textarea>
+      <div id="quickData" class="chips" title="Detected data: click to add to notes"></div>
+      <textarea id="notes" spellcheck="false" autocomplete="off" placeholder="Temporary notes (erased when the call ends)"></textarea>
     </section>
   </main>
 
-  <!-- Ajustes -->
+  <!-- Settings -->
   <dialog id="dlgSettings">
     <form method="dialog" class="dlg">
-      <h2>Ajustes</h2>
-      <label>Tu nombre (para tarjetas) <input id="cfgName" type="text"></label>
-      <label>Tu ID de intérprete <input id="cfgId" type="text"></label>
-      <label class="row"><input id="cfgTranslate" type="checkbox"> Traducir en vivo (ES ⇄ EN)</label>
+      <h2>Settings</h2>
+      <label>Your name (for cards) <input id="cfgName" type="text"></label>
+      <label>Your interpreter ID <input id="cfgId" type="text"></label>
+      <label class="row"><input id="cfgTranslate" type="checkbox"> Live translation (EN ⇄ ES)</label>
       <p id="trInfo" class="hint"></p>
-      <label class="row"><input id="cfgLocal" type="checkbox"> Motor del navegador: procesar en el dispositivo (si lo soporta)</label>
+      <label class="row"><input id="cfgLocal" type="checkbox"> Browser engine: process on device (if supported)</label>
       <p id="localInfo" class="hint"></p>
 
-      <h3>Glosario</h3>
-      <p class="hint">Importa tu vocabulario en CSV (término, traducción, definición, dominio) separado por coma, punto y coma o tabulador. Dominios: medico, legal, bancario, seguros, general.</p>
+      <h3>Glossary</h3>
+      <p class="hint">Import your vocabulary as CSV (term, translation, definition, domain) separated by comma, semicolon or tab. Domains: medical, legal, banking, insurance, general.</p>
       <input id="fileGloss" type="file" accept=".csv,.tsv,.txt,.json">
-      <textarea id="pasteGloss" rows="4" placeholder="…o pega aquí las filas del CSV"></textarea>
-      <label class="row"><input id="cfgReplace" type="checkbox"> Reemplazar el glosario base (si no, se agrega)</label>
+      <textarea id="pasteGloss" rows="4" placeholder="…or paste the CSV rows here"></textarea>
+      <label class="row"><input id="cfgReplace" type="checkbox"> Replace the base glossary (otherwise entries are added)</label>
       <div class="row">
-        <button id="btnImport" type="button" class="btn">Importar</button>
-        <button id="btnResetGloss" type="button" class="btn ghost">Restaurar glosario base</button>
+        <button id="btnImport" type="button" class="btn">Import</button>
+        <button id="btnResetGloss" type="button" class="btn ghost">Restore base glossary</button>
       </div>
       <p id="glossInfo" class="hint"></p>
-      <p class="hint">Atajos: <b>Alt+S</b> iniciar · <b>Alt+P</b> pausar · <b>Alt+E</b> terminar · <b>Alt+L</b> cambiar idioma.</p>
-      <div class="row end"><button class="btn start" value="close">Cerrar</button></div>
+      <p class="hint">Shortcuts: <b>Alt+S</b> start · <b>Alt+P</b> pause · <b>Alt+E</b> end · <b>Alt+L</b> switch language.</p>
+      <div class="row end"><button class="btn start" value="close">Close</button></div>
     </form>
   </dialog>
 
-  <!-- Nueva tarjeta -->
+  <!-- New card -->
   <dialog id="dlgCard">
     <form id="cardForm" method="dialog" class="dlg">
-      <h2>Nueva tarjeta</h2>
-      <label>Categoría (pestaña) <input id="cardCat" type="text" list="cardCats" placeholder="p. ej. Disclosures, Médico, Mis frases"></label>
+      <h2>New card</h2>
+      <label>Category (tab) <input id="cardCat" type="text" list="cardCats" placeholder="e.g. Disclosures, Medical, My phrases"></label>
       <datalist id="cardCats"></datalist>
-      <label>Título <input id="cardTitle" type="text" placeholder="p. ej. Aviso de grabación"></label>
-      <label>Texto en español <textarea id="cardEs" rows="3"></textarea></label>
-      <label>Texto en inglés <textarea id="cardEn" rows="3"></textarea></label>
-      <label>Palabras clave (opcional, separadas por coma)
-        <input id="cardKeys" type="text" placeholder="grabada, recorded, statement">
+      <label>Title <input id="cardTitle" type="text" placeholder="e.g. Recording notice"></label>
+      <label>English text <textarea id="cardEn" rows="3"></textarea></label>
+      <label>Spanish text (for the LEP) <textarea id="cardEs" rows="3"></textarea></label>
+      <label>Keywords (optional, comma separated)
+        <input id="cardKeys" type="text" placeholder="recorded, grabada, statement">
       </label>
-      <p class="hint">Cuando alguna palabra clave se escuche en la llamada, la tarjeta aparecerá como sugerencia. Puedes usar {nombre} y {id}.</p>
+      <p class="hint">When a keyword is heard on the call, the card shows up as a suggestion. You can use {nombre} (your name) and {id}.</p>
       <details>
-        <summary>Agregar varias a la vez (CSV)</summary>
-        <p class="hint">Una por línea: categoría;título;español;inglés;palabras clave (separa las claves con |)</p>
-        <textarea id="cardBulk" rows="4" placeholder="Disclosures;Grabación;Esta llamada puede ser grabada.;This call may be recorded.;grabada|recorded"></textarea>
+        <summary>Add several at once (CSV)</summary>
+        <p class="hint">One per line: category;title;English;Spanish;keywords (separate keywords with |)</p>
+        <textarea id="cardBulk" rows="4" placeholder="Disclosures;Recording;This call may be recorded.;Esta llamada puede ser grabada.;recorded|grabada"></textarea>
       </details>
       <p id="cardInfo" class="hint"></p>
-      <p class="hint">Las tarjetas propias se guardan solo en este navegador.</p>
+      <p class="hint">Your own cards are saved only in this browser.</p>
       <div class="row end">
-        <button class="btn ghost" value="cancel" formnovalidate>Cancelar</button>
-        <button id="btnSaveCard" type="button" class="btn start">Guardar</button>
+        <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+        <button id="btnSaveCard" type="button" class="btn start">Save</button>
       </div>
     </form>
   </dialog>

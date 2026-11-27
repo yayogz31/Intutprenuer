@@ -10,6 +10,23 @@ Asistente web para intérpretes y agentes telefónicos. Escucha la llamada, tran
 
 Botones **Iniciar**, **Pausar/Reanudar** y **Terminar**. Atajos: `Alt+S`, `Alt+P`, `Alt+E`, `Alt+L` (cambiar ES ⇄ EN).
 
+## Interfaz en inglés y tarjetas para Provider / LEP
+
+- La página está en **inglés**. Las tarjetas y sugerencias muestran el **inglés como texto principal** y el **español debajo**, como traducción.
+- El selector **To Provider · EN / To LEP · ES** cambia el idioma principal de las tarjetas y sugerencias:
+  - **To Provider:** inglés grande, español abajo (para lo que le dices al proveedor o agente).
+  - **To LEP:** español grande, inglés abajo (las mismas tarjetas, dirigidas a la persona LEP).
+
+## Navegadores compatibles
+
+| Función | Chrome / Edge | Firefox | Safari |
+|---|---|---|---|
+| Transcripción (motor local) | ✅ | ✅ | ✅ (micrófono) |
+| Audio de pestaña o sistema | ✅ | ✅ pestañas | ❌ (usa cable virtual) |
+| Modo Auto EN + ES | ✅ | ✅ | ✅ |
+| Traducción en vivo | ✅ Chrome 138+ | ❌ | ❌ |
+| Glosario, sugerencias, tarjetas, disclosures | ✅ | ✅ | ✅ |
+
 ## Idioma y traducción
 
 - **Auto (ES + EN):** escucha los dos idiomas a la vez y detecta el de cada frase (etiqueta ES/EN). No hay que cambiar nada a mano durante la llamada. Usa el motor local con los dos modelos cargados.

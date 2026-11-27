@@ -7,8 +7,8 @@
   const $ = (id) => document.getElementById(id);
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const DOMS = ["medico", "legal", "bancario", "seguros"];
-  const DOM_LABEL = { medico: "Médico", legal: "Legal", bancario: "Bancario", seguros: "Seguros", duda: "Duda", general: "General", aviso: "Disclosure", tarjeta: "Tarjeta" };
-  const TAB_FOR_DOM = { medico: "Médico", legal: "Legal", bancario: "Bancario", seguros: "Seguros" };
+  const DOM_LABEL = { medico: "Medical", legal: "Legal", bancario: "Banking", seguros: "Insurance", duda: "Question", general: "General", aviso: "Disclosure", tarjeta: "Card" };
+  const TAB_FOR_DOM = { medico: "Medical", legal: "Legal", bancario: "Banking", seguros: "Insurance" };
 
   // ───────────────── Utilidades ─────────────────
   const strip = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -45,11 +45,11 @@
       const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta);
       ta.select(); document.execCommand("copy"); ta.remove();
     }
-    toast("Copiado");
+    toast("Copied");
   }
 
   // ───────────────── Configuración (solo preferencias, nunca texto de llamadas) ─────────────────
-  const cfg = Object.assign({ name: "", id: "", local: false, lang: "es-MX", source: "mic", engine: "vosk", translate: true }, store.get("inturp.cfg", {}));
+  const cfg = Object.assign({ name: "", id: "", local: false, lang: "auto", source: "mic", engine: "vosk", translate: true, audience: "provider" }, store.get("inturp.cfg", {}));
   const saveCfg = () => store.set("inturp.cfg", cfg);
 
   // ───────────────── Glosario e índice de términos ─────────────────
@@ -108,7 +108,7 @@
       const list = (KW[d] || []).map((w) => reEsc(strip(w)));
       kwRe[d] = list.length ? new RegExp(`(?<![\\p{L}\\p{N}])(${list.join("|")})(?:es|s)?(?![\\p{L}\\p{N}])`, "gu") : null;
     }
-    $("glossInfo").textContent = `Glosario activo: ${glossary.length} entradas.`;
+    $("glossInfo").textContent = `Active glossary: ${glossary.length} entries.`;
   }
 
   // ───────────────── Análisis de frase (sin IA, reglas + diccionario) ─────────────────
@@ -202,10 +202,11 @@
   function renderSuggestions(list) {
     const box = $("suggestions");
     if (!list.length) return;
+    const [p1, p2] = primaryOrder();
     box.innerHTML = list.map((s) => `
-      <div class="sugg" data-es="${esc(s.es)}" data-en="${esc(s.en)}">
+      <div class="sugg" data-${p1}="${esc(s[p1] || "")}" data-${p2}="${esc(s[p2] || "")}">
         <span class="src tag ${s.dom}">${esc(s.titulo && s.dom === "tarjeta" ? s.titulo : (DOM_LABEL[s.dom] || s.dom))}</span>
-        <div class="es">${esc(s.es)}</div><div class="en">${esc(s.en)}</div>
+        <div class="pri" data-l="${p1}">${esc(s[p1] || s[p2])}</div>${s[p2] && s[p1] ? `<div class="sec" data-l="${p2}">${esc(s[p2])}</div>` : ""}
       </div>`).join("");
   }
 
@@ -228,7 +229,7 @@
   function renderTerms() {
     const arr = [...session.termsSeen.entries()].sort((a, b) => b[1].t - a[1].t);
     $("termCount").textContent = arr.length;
-    $("terms").innerHTML = arr.length ? arr.map(([e, v]) => termHTML(e, v.n)).join("") : `<p class="empty">Los términos de tu glosario aparecerán aquí al escucharse.</p>`;
+    $("terms").innerHTML = arr.length ? arr.map(([e, v]) => termHTML(e, v.n)).join("") : `<p class="empty">Glossary terms will appear here when they are heard.</p>`;
   }
   function renderChips() {
     $("quickData").innerHTML = [...session.nums].slice(-12).map((v) => `<button type="button" data-v="${esc(v)}">${esc(v)}</button>`).join("");
@@ -249,7 +250,7 @@
         if (av === "unavailable") return null;
         return self.Translator.create({
           sourceLanguage: from, targetLanguage: to,
-          monitor(m) { m.addEventListener("downloadprogress", (e) => { if (e.loaded < 1) notice(`Preparando el traductor (${from.toUpperCase()}→${to.toUpperCase()}) por única vez… ${Math.round(e.loaded * 100)}%`); else notice(""); }); },
+          monitor(m) { m.addEventListener("downloadprogress", (e) => { if (e.loaded < 1) notice(`Setting up the translator (${from.toUpperCase()}→${to.toUpperCase()}), one time only… ${Math.round(e.loaded * 100)}%`); else notice(""); }); },
         });
       })().catch(() => { setTimeout(() => delete translators[k], 15000); return null; });
     }
@@ -339,7 +340,7 @@
   // ───────────────── Tarjetas ─────────────────
   // Tarjetas base (data/tarjetas.js) + tarjetas propias (guardadas solo en este navegador).
   // "claves": palabras que, al escucharse, muestran la tarjeta como sugerencia.
-  let activeCat = "Introducción";
+  let activeCat = "Introduction";
   let customCards = store.get("inturp.cards", []);
   let cardsCache = null;
   const fill = (s) => String(s || "").replace(/\{nombre\}/g, cfg.name || "___").replace(/\{id\}/g, cfg.id || "___");
@@ -353,16 +354,20 @@
     return cardsCache;
   }
   function saveCustomCards() { store.set("inturp.cards", customCards); cardsCache = null; renderCards(); }
+  /** To Provider: inglés principal, español como traducción. To LEP: español principal. */
+  const primaryOrder = () => (cfg.audience === "lep" ? ["es", "en"] : ["en", "es"]);
   function renderCards() {
     const cards = allCards();
+    const [p1, p2] = primaryOrder();
+    for (const b of $("audience").children) b.classList.toggle("on", b.dataset.aud === cfg.audience);
     const cats = [...new Set(cards.map((c) => c.cat))];
     if (!cats.includes(activeCat)) activeCat = cats[0];
     $("cardTabs").innerHTML = cats.map((c) => `<button type="button" data-cat="${esc(c)}" class="${c === activeCat ? "on" : ""}">${esc(c)}</button>`).join("");
     $("cards").innerHTML = cards.filter((c) => c.cat === activeCat).map((c) => `
-      <div class="card">${c._custom !== undefined ? `<button type="button" class="del" data-del="${c._custom}" title="Eliminar tarjeta">×</button>` : ""}
-        <div class="title">${esc(c.titulo)}${c.claves ? ` <span class="keys" title="Aparece como sugerencia al escuchar: ${esc(c.claves)}">⚡</span>` : ""}</div>
-        <div class="es" data-copy="${esc(fill(c.es))}">${esc(fill(c.es))}</div>
-        ${c.en ? `<div class="en" data-copy="${esc(fill(c.en))}">${esc(fill(c.en))}</div>` : ""}</div>`).join("");
+      <div class="card">${c._custom !== undefined ? `<button type="button" class="del" data-del="${c._custom}" title="Delete card">×</button>` : ""}
+        <div class="title">${esc(c.titulo)}${c.claves ? ` <span class="keys" title="Shows up as a suggestion when heard: ${esc(c.claves)}">⚡</span>` : ""}</div>
+        <div class="pri" data-copy="${esc(fill(c[p1] || c[p2]))}">${esc(fill(c[p1] || c[p2]))}</div>
+        ${c[p1] && c[p2] ? `<div class="sec" data-copy="${esc(fill(c[p2]))}">${esc(fill(c[p2]))}</div>` : ""}</div>`).join("");
     $("cardCats").innerHTML = cats.map((c) => `<option value="${esc(c)}">`).join("");
     if (session) renderMeter();
   }
@@ -380,8 +385,9 @@
       }
       out.push(cur.trim()); return out;
     });
-    if (/^(categ|cat$|category)/.test(strip(rows[0][0] || ""))) rows.shift();
-    return rows.filter((r) => r[0] && r[2]).map((r) => ({ cat: r[0], titulo: r[1] || r[2].slice(0, 30), es: r[2], en: r[3] || "", claves: (r[4] || "").replace(/\|/g, ",") }));
+    if (/^(categ|cat$)/.test(strip(rows[0][0] || ""))) rows.shift();
+    // category;title;English;Spanish;keywords
+    return rows.filter((r) => r[0] && (r[2] || r[3])).map((r) => ({ cat: r[0], titulo: r[1] || (r[2] || r[3]).slice(0, 30), en: r[2] || "", es: r[3] || "", claves: (r[4] || "").replace(/\|/g, ",") }));
   }
 
   // ───────────────── Captura de audio y reconocimiento ─────────────────
@@ -397,11 +403,11 @@
     state = s;
     const st = $("status");
     st.className = "status " + ({ idle: "idle", running: "run", paused: "paused" }[s]);
-    st.textContent = { idle: "Inactivo", running: "Escuchando", paused: "En pausa" }[s];
+    st.textContent = { idle: "Idle", running: "Listening", paused: "Paused" }[s];
     $("btnStart").disabled = s !== "idle";
     $("btnPause").disabled = s === "idle";
     $("btnStop").disabled = s === "idle";
-    $("btnPause").textContent = s === "paused" ? "▶ Reanudar" : "❚❚ Pausar";
+    $("btnPause").textContent = s === "paused" ? "▶ Resume" : "❚❚ Pause";
     $("selSource").disabled = s !== "idle";
     $("selEngine").disabled = s !== "idle";
   }
@@ -425,15 +431,21 @@
     streams.push(disp);
     const sysTrack = disp.getAudioTracks()[0];
     if (!sysTrack) throw new Error("NO_SYSTEM_AUDIO");
-    sysTrack.addEventListener("ended", () => { if (state !== "idle") forcePause("Se dejó de compartir el audio. Presiona Terminar e Inicia de nuevo para volver a compartir."); });
+    sysTrack.addEventListener("ended", () => { if (state !== "idle") forcePause("Audio sharing stopped. Press End and then Start again to share it again."); });
     if (source === "system") return sysTrack;
     // mezcla micrófono + sistema
     const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
     streams.push(mic);
+    const mixInto = (ctx) => {
+      const dest = ctx.createMediaStreamDestination();
+      ctx.createMediaStreamSource(new MediaStream([sysTrack])).connect(dest);
+      ctx.createMediaStreamSource(mic).connect(dest);
+      return dest;
+    };
+    let dest;
     audioCtx = makeCtx();
-    const dest = audioCtx.createMediaStreamDestination();
-    audioCtx.createMediaStreamSource(new MediaStream([sysTrack])).connect(dest);
-    audioCtx.createMediaStreamSource(mic).connect(dest);
+    try { dest = mixInto(audioCtx); }
+    catch { try { audioCtx.close(); } catch { /* */ } audioCtx = new AudioContext(); dest = mixInto(audioCtx); }
     return dest.stream.getAudioTracks()[0];
   }
 
@@ -446,7 +458,7 @@
   function loadScript(src) {
     return new Promise((res, rej) => {
       const el = document.createElement("script");
-      el.src = src; el.onload = res; el.onerror = () => rej(new Error("no se pudo cargar " + src));
+      el.src = src; el.onload = res; el.onerror = () => rej(new Error("could not load " + src));
       document.head.appendChild(el);
     });
   }
@@ -456,12 +468,12 @@
       const url = new URL(`models/${k}.tar.gz`, location.href).href;
       voskModels[k] = (async () => {
         const head = await fetch(url, { method: "HEAD" }).catch(() => null);
-        if (head && !head.ok) throw new Error(`falta el archivo models/${k}.tar.gz`);
+        if (head && !head.ok) throw new Error(`missing file models/${k}.tar.gz`);
         const m = new window.Vosk.Model(url, -1);
         await new Promise((res, rej) => {
-          const to = setTimeout(() => rej(new Error("tiempo de espera agotado al cargar el modelo")), 240000);
-          m.on("load", (e) => { clearTimeout(to); e.result ? res() : rej(new Error("modelo inválido")); });
-          m.on("error", (e) => { clearTimeout(to); rej(new Error(e.error || "modelo inválido")); });
+          const to = setTimeout(() => rej(new Error("timed out loading the model")), 240000);
+          m.on("load", (e) => { clearTimeout(to); e.result ? res() : rej(new Error("invalid model")); });
+          m.on("error", (e) => { clearTimeout(to); rej(new Error(e.error || "invalid model")); });
         });
         return m;
       })().catch((e) => { delete voskModels[k]; throw e; });
@@ -478,18 +490,26 @@
     const gen = ++voskGen;
     const auto = cfg.lang === "auto";
     const langs = auto ? ["es", "en"] : [langOf()];
-    const slow = setTimeout(() => notice(`Cargando el motor de voz local${auto ? " (español + inglés)" : ""}… la primera vez descarga ~40 MB por idioma; después queda guardado.`), 300);
+    const slow = setTimeout(() => notice(`Loading the local speech engine${auto ? " (Spanish + English)" : ""}… the first time it downloads ~40 MB per language; after that it stays saved.`), 300);
     let models;
     try { models = await Promise.all(langs.map(getVoskModel)); }
     catch (e) {
       clearTimeout(slow);
-      if (gen === voskGen) forcePause(`No se pudo cargar el motor local (${(e && e.message) || e}). Revisa que la acción «Modelos de voz» de GitHub haya terminado, o cambia el motor a «Navegador».`);
+      if (gen === voskGen) forcePause(`Could not load the local engine (${(e && e.message) || e}). Check that the GitHub action "Modelos de voz" finished, or switch the engine to "Browser".`);
       return;
     }
     clearTimeout(slow);
     if (gen !== voskGen || state !== "running") return;
     notice("");
     if (!audioCtx) audioCtx = makeCtx();
+    let src;
+    try { src = audioCtx.createMediaStreamSource(new MediaStream([track])); }
+    catch {
+      // Firefox no permite mezclar frecuencias de muestreo: se usa la frecuencia nativa y Vosk remuestrea
+      try { await audioCtx.close(); } catch { /* */ }
+      audioCtx = new AudioContext();
+      src = audioCtx.createMediaStreamSource(new MediaStream([track]));
+    }
     if (audioCtx.state === "suspended") { try { await audioCtx.resume(); } catch { /* */ } }
     const rate = audioCtx.sampleRate;
 
@@ -507,6 +527,9 @@
         if (score > bestScore) { bestScore = score; best = lg; }
       }
       if (!best) return;
+      // descarta ruido: 1–2 palabras con baja confianza
+      const bw = seg[best], bavg = bw.reduce((t, x) => t + (x.conf || 0), 0) / bw.length;
+      if (bw.length <= 2 && bavg < 0.8) return;
       lastLang = best;
       handleInterim("");
       handleFinal(seg[best].map((x) => x.word).join(" "), best);
@@ -536,7 +559,6 @@
       v.recs.push(r);
     }
     const flush = () => { v.recs.forEach((r) => r.retrieveFinalResult()); v.partialText = ""; v.partialAt = 0; };
-    const src = audioCtx.createMediaStreamSource(new MediaStream([track]));
     const proc = audioCtx.createScriptProcessor(rate <= 16000 ? 1024 : 2048, 1, 1);
     proc.onaudioprocess = (e) => {
       if (state !== "running" || gen !== voskGen) return;
@@ -572,8 +594,8 @@
     cfg.engine = "vosk"; saveCfg(); $("selEngine").value = "vosk";
     try {
       if (!track) { track = await getAudioTrack(cfg.source === "mic" ? "mic" : cfg.source); }
-    } catch (e) { forcePause("No se pudo abrir el micrófono para el motor local."); return; }
-    toast(`${reason} Se cambió al motor local (sin internet).`, 6000);
+    } catch (e) { forcePause("Could not open the microphone for the local engine."); return; }
+    toast(`${reason} Switched to the local engine (offline).`, 6000);
     if (state === "running") startVosk();
   }
 
@@ -585,14 +607,14 @@
         const st = await SR.available({ langs: [lang], processLocally: true });
         if (st === "available") return true;
         if ((st === "downloadable" || st === "downloading") && typeof SR.install === "function") {
-          notice("Descargando el modelo de voz del navegador (solo la primera vez)…");
+          notice("Downloading the browser speech model (first time only)…");
           const ok = await SR.install({ langs: [lang], processLocally: true });
           notice("");
           return !!ok;
         }
       }
     } catch { /* no soportado */ }
-    notice("Tu navegador no ofrece reconocimiento en el dispositivo para este idioma; se usa su servicio en línea.");
+    notice("Your browser has no on-device recognition for this language; using its online service.");
     return false;
   }
 
@@ -612,14 +634,14 @@
     };
     r.onerror = (e) => {
       if (e.error === "no-speech" || e.error === "aborted") return;
-      const fatal = { "not-allowed": "Permiso de micrófono denegado. Actívalo en el candado de la barra de direcciones.",
+      const fatal = { "not-allowed": "Microphone permission denied. Allow it from the lock icon in the address bar.",
         "service-not-allowed": null,
-        "audio-capture": "No se encontró un dispositivo de audio.",
-        "language-not-supported": "Idioma no soportado por el motor de voz del navegador." }[e.error];
+        "audio-capture": "No audio device found.",
+        "language-not-supported": "Language not supported by the browser speech engine." }[e.error];
       if (fatal) { forcePause(fatal); return; }
-      if (e.error === "service-not-allowed") { fallbackToLocal("Este navegador bloquea su servicio de voz en línea."); return; }
+      if (e.error === "service-not-allowed") { fallbackToLocal("This browser blocks its online speech service."); return; }
       errStreak++;
-      if (e.error === "network" && ++netErr >= 2) fallbackToLocal("El servicio de voz en línea del navegador no responde (error de red).");
+      if (e.error === "network" && ++netErr >= 2) fallbackToLocal("The browser online speech service is not responding (network error).");
     };
     r.onend = () => {
       if (rec !== r) return;
@@ -637,7 +659,7 @@
         catch (err) {
           trackSupported = false;
           rec = makeRec(localOK); rec.start();
-          fallbackToLocal("El motor del navegador no puede escuchar esa fuente de audio.");
+          fallbackToLocal("The browser engine cannot listen to that audio source.");
           return;
         }
       } else rec.start();
@@ -656,7 +678,7 @@
     if (state !== "idle") return;
     prepareTranslators();   // dentro del clic: el navegador puede necesitar descargar el traductor
     if (cfg.engine === "browser" && (!SR || cfg.lang === "auto")) { cfg.engine = "vosk"; $("selEngine").value = "vosk"; saveCfg(); }
-    if (cfg.engine === "vosk" && (!window.WebAssembly || !window.AudioContext)) { notice("Este navegador no soporta el motor local. Usa Chrome, Edge o Firefox actualizados.", true); return; }
+    if (cfg.engine === "vosk" && (!window.WebAssembly || !window.AudioContext)) { notice("This browser does not support the local engine. Use an up-to-date Chrome, Edge, Firefox or Safari.", true); return; }
     notice("");
     session = freshSession();
     trackSupported = true; netErr = 0; errStreak = 0;
@@ -666,16 +688,16 @@
       cleanupAudio();
       session = null;
       notice(err && err.message === "NO_SYSTEM_AUDIO"
-        ? "No se recibió audio: al compartir, elige la pestaña (p. ej. YouTube) o 'Toda la pantalla' y activa «Compartir audio»."
-        : "No se pudo acceder al audio: " + (err && err.name === "NotAllowedError" ? "permiso denegado." : (err && err.message) || err), true);
+        ? "No audio received: when sharing, pick the tab (e.g. YouTube) or 'Entire screen' and turn on \"Share audio\"."
+        : "Could not access audio: " + (err && err.name === "NotAllowedError" ? "permission denied." : (err && err.message) || err), true);
       return;
     }
     if (cfg.engine === "browser") localOK = await prepareLocal(cfg.lang);
     if (cfg.translate && !hasTranslator() && !store.get("inturp.trWarned", false)) {
-      notice("Para ver la traducción en vivo usa Google Chrome 138 o más reciente (escritorio): trae un traductor integrado que funciona sin internet. Las sugerencias y tarjetas siguen siendo bilingües.");
+      notice("For live translation use Google Chrome 138 or newer (desktop): it has a built-in translator that works offline. Suggestions and cards are still bilingual.");
       store.set("inturp.trWarned", true);
     }
-    $("transcript").innerHTML = `<p class="empty">Escuchando…</p>`;
+    $("transcript").innerHTML = `<p class="empty">Listening…</p>`;
     t0 = Date.now(); pausedMs = 0;
     setState("running");
     tick = setInterval(() => ($("timer").textContent = fmtTime(elapsed())), 500);
@@ -705,22 +727,22 @@
   /** Termina la llamada y BORRA todo lo relacionado con ella. */
   function stop(skipConfirm) {
     if (state === "idle" && !session) return;
-    if (!skipConfirm && $("notes").value.trim() && !confirm("Al terminar se borrarán la transcripción y tus notas. ¿Terminar la llamada?")) return;
+    if (!skipConfirm && $("notes").value.trim() && !confirm("Ending the call will erase the transcript and your notes. End the call?")) return;
     stopRecognition();
     cleanupAudio();
     clearInterval(tick); tick = null;
     wipe();
     setState("idle");
-    toast("Llamada terminada · todo borrado");
+    toast("Call ended · everything erased");
   }
 
   function wipe() {
     session = null; t0 = 0; pausedMs = 0;
-    $("transcript").innerHTML = `<p class="empty">Llamada terminada. Todo el contenido fue eliminado.</p>`;
+    $("transcript").innerHTML = `<p class="empty">Call ended. All content was erased.</p>`;
     $("interim").textContent = "";
     $("interimTr").textContent = "";
-    $("suggestions").innerHTML = `<p class="empty">Aparecerán aquí según lo que se diga.</p>`;
-    $("terms").innerHTML = `<p class="empty">Los términos de tu glosario aparecerán aquí al escucharse.</p>`;
+    $("suggestions").innerHTML = `<p class="empty">Suggestions will appear here based on what is said.</p>`;
+    $("terms").innerHTML = `<p class="empty">Glossary terms will appear here when they are heard.</p>`;
     $("termCount").textContent = "0";
     $("quickData").innerHTML = "";
     $("notes").value = "";
@@ -737,7 +759,7 @@
   function applyLang() {
     $("selLang").value = cfg.lang; saveCfg();
     if (cfg.lang.startsWith("es")) store.set("inturp.lastEs", cfg.lang);
-    toast(cfg.lang === "auto" ? "Idioma: automático (ES + EN)" : cfg.lang.startsWith("es") ? "Escuchando: Español" : "Listening: English");
+    toast(cfg.lang === "auto" ? "Language: automatic (EN + ES)" : cfg.lang.startsWith("es") ? "Listening: Spanish" : "Listening: English");
     prepareTranslators();
     if (state === "running") { stopRecognition(); startRecognition(); }
   }
@@ -774,8 +796,8 @@
     $("cfgLocal").disabled = false;
     $("cfgName").value = cfg.name; $("cfgId").value = cfg.id; $("cfgLocal").checked = cfg.local;
     $("localInfo").textContent = SR && (typeof SR.available === "function" || "processLocally" in SR.prototype)
-      ? "Tu navegador parece soportarlo: el audio no saldría del equipo."
-      : "No disponible en este navegador: Chrome/Edge usan su servicio de voz en línea (no guarda ni comparte el texto con esta app).";
+      ? "Your browser seems to support it: audio would stay on your device."
+      : "Not available in this browser: Chrome/Edge use their online speech service.";
 
     $("btnStart").onclick = start;
     $("btnPause").onclick = pause;
@@ -785,21 +807,29 @@
     $("cfgTranslate").checked = cfg.translate;
     $("cfgTranslate").onchange = (e) => { cfg.translate = e.target.checked; saveCfg(); if (cfg.translate) prepareTranslators(); };
     $("trInfo").textContent = hasTranslator()
-      ? "Tu navegador tiene traductor integrado: la traducción se hace en tu equipo, sin internet."
-      : "Tu navegador no tiene traductor integrado. Usa Google Chrome 138 o más reciente (escritorio).";
+      ? "Your browser has a built-in translator: translation runs on your device, offline."
+      : "Your browser has no built-in translator. Use Google Chrome 138 or newer (desktop).";
 
+    $("audience").onclick = (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      cfg.audience = b.dataset.aud; saveCfg(); renderCards();
+      if (session && $("suggestions").querySelector(".sugg")) $("suggestions").querySelectorAll(".sugg").forEach((el) => {
+        const [p1, p2] = primaryOrder(); const pri = el.querySelector(".pri"), sec = el.querySelector(".sec");
+        if (pri && sec) { pri.textContent = el.dataset[p1]; pri.dataset.l = p1; sec.textContent = el.dataset[p2]; sec.dataset.l = p2; }
+      });
+    };
     // tarjetas propias
     $("btnAddCard").onclick = () => { $("cardForm").reset(); $("cardCat").value = activeCat; $("cardInfo").textContent = ""; $("dlgCard").showModal(); };
     $("btnSaveCard").onclick = () => {
-      const c = { cat: $("cardCat").value.trim() || "Mis tarjetas", titulo: $("cardTitle").value.trim(), es: $("cardEs").value.trim(), en: $("cardEn").value.trim(), claves: $("cardKeys").value.trim() };
+      const c = { cat: $("cardCat").value.trim() || "My cards", titulo: $("cardTitle").value.trim(), es: $("cardEs").value.trim(), en: $("cardEn").value.trim(), claves: $("cardKeys").value.trim() };
       const bulk = $("cardBulk").value.trim();
-      const items = bulk ? parseCardsCSV(bulk) : (c.es ? [{ ...c, titulo: c.titulo || c.es.slice(0, 30) }] : []);
-      if (!items.length) { $("cardInfo").textContent = "Escribe al menos el texto en español (o pega filas CSV)."; return; }
+      const items = bulk ? parseCardsCSV(bulk) : (c.es || c.en ? [{ ...c, titulo: c.titulo || (c.en || c.es).slice(0, 30) }] : []);
+      if (!items.length) { $("cardInfo").textContent = "Write at least the English or Spanish text (or paste CSV rows)."; return; }
       customCards = customCards.concat(items);
       activeCat = items[items.length - 1].cat;
       saveCustomCards();
       $("dlgCard").close();
-      toast(items.length > 1 ? `${items.length} tarjetas agregadas` : "Tarjeta agregada");
+      toast(items.length > 1 ? `${items.length} cards added` : "Card added");
     };
     $("selSource").onchange = (e) => { cfg.source = e.target.value; saveCfg(); };
     $("selEngine").value = cfg.engine;
@@ -811,13 +841,14 @@
 
     $("suggestions").onclick = (e) => {
       const el = e.target.closest(".sugg"); if (!el) return;
-      copy(e.target.closest(".en") ? el.dataset.en : el.dataset.es);
+      const l = (e.target.closest("[data-l]") || el.querySelector(".pri")).dataset.l;
+      copy(el.dataset[l]);
     };
     $("cardTabs").onclick = (e) => { const b = e.target.closest("button"); if (b) { activeCat = b.dataset.cat; renderCards(); } };
     $("cards").onclick = (e) => {
       const del = e.target.closest("[data-del]");
-      if (del) { if (confirm("¿Eliminar esta tarjeta?")) { customCards.splice(+del.dataset.del, 1); saveCustomCards(); } return; }
-      const el = e.target.closest("[data-copy]") || e.target.closest(".card")?.querySelector(".es"); if (el) copy(el.dataset.copy);
+      if (del) { if (confirm("Delete this card?")) { customCards.splice(+del.dataset.del, 1); saveCustomCards(); } return; }
+      const el = e.target.closest("[data-copy]") || e.target.closest(".card")?.querySelector(".pri"); if (el) copy(el.dataset.copy);
     };
     $("quickData").onclick = (e) => {
       const b = e.target.closest("button"); if (!b) return;
@@ -836,22 +867,22 @@
     $("glossSearch").oninput = (e) => {
       const q = strip(e.target.value.trim());
       if (q.length < 2) { $("glossResults").innerHTML = ""; return; }
-      $("glossResults").innerHTML = glossary.filter((g) => strip(`${g.t} ${g.tr} ${g.d}`).includes(q)).slice(0, 30).map((g) => termHTML(g)).join("") || `<p class="empty">Sin resultados.</p>`;
+      $("glossResults").innerHTML = glossary.filter((g) => strip(`${g.t} ${g.tr} ${g.d}`).includes(q)).slice(0, 30).map((g) => termHTML(g)).join("") || `<p class="empty">No results.</p>`;
     };
 
     $("fileGloss").onchange = async (e) => { const f = e.target.files[0]; if (f) $("pasteGloss").value = await f.text(); };
     $("btnImport").onclick = () => {
       try {
         const items = parseGlossary($("pasteGloss").value);
-        if (!items.length) { $("glossInfo").textContent = "No se encontraron filas válidas."; return; }
+        if (!items.length) { $("glossInfo").textContent = "No valid rows found."; return; }
         const prev = store.get("inturp.gloss", null);
         const replace = $("cfgReplace").checked;
         const merged = replace ? items : (prev ? prev.items : []).concat(items);
         store.set("inturp.gloss", { replace: replace || !!(prev && prev.replace), items: merged });
         loadGlossary();
-        $("glossInfo").textContent = `Importadas ${items.length} entradas · glosario activo: ${glossary.length}.`;
+        $("glossInfo").textContent = `Imported ${items.length} entries · active glossary: ${glossary.length}.`;
         $("pasteGloss").value = ""; $("fileGloss").value = "";
-      } catch (err) { $("glossInfo").textContent = "Error al leer: " + err.message; }
+      } catch (err) { $("glossInfo").textContent = "Read error: " + err.message; }
     };
     $("btnResetGloss").onclick = () => { store.del("inturp.gloss"); loadGlossary(); };
 
