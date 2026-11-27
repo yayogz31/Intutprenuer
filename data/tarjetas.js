@@ -1,0 +1,103 @@
+/*
+ * TARJETAS (frases listas para usar). {nombre} y {id} se reemplazan con tus datos de ⚙ Ajustes.
+ * cat = categoría (pestaña). Puedes agregar/editar libremente.
+ */
+window.TARJETAS = [
+  // Introducción
+  { cat: "Introducción", titulo: "Presentación (intérprete)",
+    es: "Hola, mi nombre es {nombre}, intérprete número {id}. Hoy seré su intérprete. Todo lo que se diga será interpretado y se mantendrá confidencial.",
+    en: "Hello, my name is {nombre}, interpreter ID {id}. I will be your interpreter today. Everything said will be interpreted and kept confidential." },
+  { cat: "Introducción", titulo: "Pre-sesión con el proveedor",
+    es: "Antes de comenzar: por favor hable directamente con la persona y haga pausas cortas para que pueda interpretar con precisión.",
+    en: "Before we begin: please speak directly to the other party and pause frequently so I can interpret accurately." },
+  { cat: "Introducción", titulo: "Saludo de agente",
+    es: "Gracias por llamar, mi nombre es {nombre}. ¿Con quién tengo el gusto?",
+    en: "Thank you for calling, my name is {nombre}. Who do I have the pleasure of speaking with?" },
+  { cat: "Introducción", titulo: "Verificación de identidad",
+    es: "Para proteger su información, ¿me puede confirmar su nombre completo y fecha de nacimiento?",
+    en: "To protect your information, could you please confirm your full name and date of birth?" },
+
+  // Aclaración
+  { cat: "Aclaración", titulo: "Pedir repetición",
+    es: "El intérprete solicita que repita la última parte, por favor.",
+    en: "The interpreter requests that you repeat the last part, please." },
+  { cat: "Aclaración", titulo: "Término no claro",
+    es: "El intérprete solicita una aclaración: ¿podría explicar el término «___»?",
+    en: "The interpreter requests clarification: could you explain the term \"___\"?" },
+  { cat: "Aclaración", titulo: "Hablar más despacio",
+    es: "El intérprete le pide hablar un poco más despacio, por favor.",
+    en: "The interpreter asks you to speak a little more slowly, please." },
+  { cat: "Aclaración", titulo: "Deletrear",
+    es: "¿Me lo podría deletrear, por favor?",
+    en: "Could you spell that for me, please?" },
+  { cat: "Aclaración", titulo: "Confirmar número",
+    es: "Para confirmar, ¿el número es ___?",
+    en: "Just to confirm, is the number ___?" },
+  { cat: "Aclaración", titulo: "Corrección del intérprete",
+    es: "El intérprete desea corregir una interpretación anterior.",
+    en: "The interpreter would like to correct a previous rendition." },
+
+  // Espera
+  { cat: "Espera", titulo: "Un momento",
+    es: "Un momento, por favor.",
+    en: "One moment, please." },
+  { cat: "Espera", titulo: "Poner en espera",
+    es: "¿Me permite ponerle en espera unos minutos mientras reviso la información?",
+    en: "May I place you on a brief hold while I review the information?" },
+  { cat: "Espera", titulo: "Regreso de la espera",
+    es: "Gracias por su paciencia. Ya estoy de regreso.",
+    en: "Thank you for your patience. I'm back on the line." },
+  { cat: "Espera", titulo: "Transferencia",
+    es: "Le voy a transferir con el departamento correspondiente. Por favor no cuelgue.",
+    en: "I'm going to transfer you to the appropriate department. Please stay on the line." },
+
+  // Cierre
+  { cat: "Cierre", titulo: "¿Algo más?",
+    es: "¿Hay algo más en lo que le pueda ayudar hoy?",
+    en: "Is there anything else I can help you with today?" },
+  { cat: "Cierre", titulo: "Cierre (intérprete)",
+    es: "Si no hay nada más que interpretar, el intérprete se despide. Que tengan un buen día.",
+    en: "If there is nothing else to interpret, the interpreter will now disconnect. Have a good day." },
+  { cat: "Cierre", titulo: "Resumen y despedida",
+    es: "Para resumir: ___. Gracias por su llamada, que tenga un excelente día.",
+    en: "To summarize: ___. Thank you for your call, have a great day." },
+  { cat: "Cierre", titulo: "Llamada cortada",
+    es: "Parece que la llamada se cortó. Si me escucha, por favor vuelva a llamar.",
+    en: "It seems the call was disconnected. If you can hear me, please call back." },
+
+  // Médico
+  { cat: "Médico", titulo: "Escala de dolor",
+    es: "En una escala del 1 al 10, donde 10 es el peor dolor, ¿cuánto dolor tiene?",
+    en: "On a scale of 1 to 10, with 10 being the worst pain, how much pain are you in?" },
+  { cat: "Médico", titulo: "Alergias",
+    es: "¿Es alérgico/a a algún medicamento o alimento?",
+    en: "Are you allergic to any medications or foods?" },
+  { cat: "Médico", titulo: "Medicamentos actuales",
+    es: "¿Qué medicamentos toma actualmente, y en qué dosis?",
+    en: "What medications are you currently taking, and at what dose?" },
+  { cat: "Médico", titulo: "Emergencia",
+    es: "Si es una emergencia, cuelgue y llame al 911 de inmediato.",
+    en: "If this is an emergency, please hang up and dial 911 immediately." },
+
+  // Legal
+  { cat: "Legal", titulo: "Rol del intérprete",
+    es: "Como intérprete no puedo dar asesoría legal; interpretaré todo lo que se diga de forma fiel.",
+    en: "As the interpreter I cannot give legal advice; I will interpret everything said faithfully." },
+  { cat: "Legal", titulo: "Derecho a abogado",
+    es: "Usted tiene derecho a hablar con un abogado.",
+    en: "You have the right to speak with an attorney." },
+  { cat: "Legal", titulo: "Fecha de audiencia",
+    es: "¿Me puede confirmar la fecha, la hora y la dirección de la audiencia?",
+    en: "Could you confirm the date, time and address of the hearing?" },
+
+  // Bancario
+  { cat: "Bancario", titulo: "Cargo no reconocido",
+    es: "Entiendo. Vamos a revisar el cargo. ¿Me puede indicar la fecha, el monto y el comercio?",
+    en: "I understand. Let's review the charge. Can you tell me the date, amount and merchant?" },
+  { cat: "Bancario", titulo: "Bloqueo de tarjeta",
+    es: "Por su seguridad, podemos bloquear la tarjeta ahora y enviarle una nueva.",
+    en: "For your security, we can block the card now and send you a new one." },
+  { cat: "Bancario", titulo: "Nunca compartir PIN",
+    es: "Recuerde: nunca le pediremos su PIN ni su contraseña completa.",
+    en: "Remember: we will never ask for your PIN or full password." },
+];

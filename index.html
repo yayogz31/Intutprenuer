@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Privacidad: la página no puede enviar datos a ningún servidor (connect-src 'none') -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Inturpreneur</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◉</span>
+      <div>
+        <h1>Inturpreneur</h1>
+        <small>Asistente de interpretación · sin IA · sin registro</small>
+      </div>
+    </div>
+
+    <div class="controls">
+      <select id="selLang" title="Idioma que se está escuchando">
+        <option value="es-MX">Español (MX)</option>
+        <option value="es-US">Español (US)</option>
+        <option value="es-ES">Español (ES)</option>
+        <option value="en-US">English (US)</option>
+      </select>
+      <button id="btnSwap" class="btn ghost" title="Cambiar idioma ES ⇄ EN al vuelo (Alt+L)">ES ⇄ EN</button>
+      <select id="selSource" title="Fuente de audio">
+        <option value="mic">Micrófono predeterminado</option>
+        <option value="system">Audio del sistema / pestaña</option>
+        <option value="mix">Micrófono + audio del sistema</option>
+      </select>
+      <button id="btnStart" class="btn start">▶ Iniciar</button>
+      <button id="btnPause" class="btn pause" disabled>❚❚ Pausar</button>
+      <button id="btnStop" class="btn stop" disabled>■ Terminar</button>
+      <span id="status" class="status idle">Inactivo</span>
+      <span id="timer" class="timer">00:00</span>
+      <button id="btnSettings" class="btn ghost" title="Ajustes">⚙</button>
+    </div>
+  </header>
+
+  <div id="notice" class="notice" hidden></div>
+
+  <main class="grid">
+    <!-- COLUMNA 1: transcripción -->
+    <section class="panel col-transcript">
+      <div class="panel-head">
+        <h2>Transcripción en vivo</h2>
+        <div id="domainMeter" class="meter">
+          <span data-dom="medico">Médico <b>0%</b></span>
+          <span data-dom="legal">Legal <b>0%</b></span>
+          <span data-dom="bancario">Bancario <b>0%</b></span>
+        </div>
+      </div>
+      <div id="transcript" class="transcript" aria-live="polite">
+        <p class="empty">Presiona <b>Iniciar</b> para comenzar. Nada se guarda: al terminar se borra todo.</p>
+      </div>
+      <div id="interim" class="interim"></div>
+      <form id="simForm" class="simform" autocomplete="off">
+        <input id="simInput" type="text" placeholder="Probar sin audio: escribe una frase y Enter (p. ej. “no reconozco un cargo de 250 dólares”)">
+      </form>
+    </section>
+
+    <!-- COLUMNA 2: sugerencias + tarjetas -->
+    <section class="panel col-assist">
+      <div class="panel-head"><h2>Sugerencias de respuesta</h2><small>clic = copiar</small></div>
+      <div id="suggestions" class="suggestions">
+        <p class="empty">Aparecerán aquí según lo que se diga.</p>
+      </div>
+
+      <div class="panel-head"><h2>Tarjetas</h2><small>clic = copiar</small></div>
+      <div id="cardTabs" class="tabs"></div>
+      <div id="cards" class="cards"></div>
+    </section>
+
+    <!-- COLUMNA 3: terminología + notas -->
+    <section class="panel col-side">
+      <div class="panel-head"><h2>Terminología detectada</h2><span id="termCount" class="badge">0</span></div>
+      <div id="terms" class="terms"><p class="empty">Los términos de tu glosario aparecerán aquí al escucharse.</p></div>
+      <input id="glossSearch" class="search" type="search" placeholder="Buscar en el glosario…">
+      <div id="glossResults" class="terms small"></div>
+
+      <div class="panel-head">
+        <h2>Notas</h2>
+        <button id="btnCopyNotes" class="btn ghost tiny" title="Copiar notas al portapapeles">Copiar</button>
+      </div>
+      <div id="quickData" class="chips" title="Datos detectados: clic para agregar a notas"></div>
+      <textarea id="notes" spellcheck="false" autocomplete="off" placeholder="Notas temporales (se borran al terminar la llamada)"></textarea>
+    </section>
+  </main>
+
+  <!-- Ajustes -->
+  <dialog id="dlgSettings">
+    <form method="dialog" class="dlg">
+      <h2>Ajustes</h2>
+      <label>Tu nombre (para tarjetas) <input id="cfgName" type="text"></label>
+      <label>Tu ID de intérprete <input id="cfgId" type="text"></label>
+      <label class="row"><input id="cfgLocal" type="checkbox"> Reconocimiento en el dispositivo (si el navegador lo soporta)</label>
+      <p id="localInfo" class="hint"></p>
+
+      <h3>Glosario</h3>
+      <p class="hint">Importa tu vocabulario en CSV (término, traducción, definición, dominio) separado por coma, punto y coma o tabulador. Dominios: medico, legal, bancario, general.</p>
+      <input id="fileGloss" type="file" accept=".csv,.tsv,.txt,.json">
+      <textarea id="pasteGloss" rows="4" placeholder="…o pega aquí las filas del CSV"></textarea>
+      <label class="row"><input id="cfgReplace" type="checkbox"> Reemplazar el glosario base (si no, se agrega)</label>
+      <div class="row">
+        <button id="btnImport" type="button" class="btn">Importar</button>
+        <button id="btnResetGloss" type="button" class="btn ghost">Restaurar glosario base</button>
+      </div>
+      <p id="glossInfo" class="hint"></p>
+      <p class="hint">Atajos: <b>Alt+S</b> iniciar · <b>Alt+P</b> pausar · <b>Alt+E</b> terminar · <b>Alt+L</b> cambiar idioma.</p>
+      <div class="row end"><button class="btn start" value="close">Cerrar</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="data/glosario.js"></script>
+  <script src="data/tarjetas.js"></script>
+  <script src="data/reglas.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
