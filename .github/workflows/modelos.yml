@@ -47,11 +47,59 @@ jobs:
           pack vosk-model-small-es-0.42 es.tar.gz
           pack vosk-model-small-en-us-0.15 en.tar.gz
 
+      - name: Whisper base (transcripción precisa)
+        env:
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          R=onnx-community/whisper-base
+          D=models/hf/$R
+          if [ -f "$D/onnx/decoder_model_merged_quantized.onnx" ] && [ "${FORCE:-false}" != "true" ]; then echo "whisper ya existe"; exit 0; fi
+          mkdir -p "$D/onnx"
+          for f in config.json generation_config.json preprocessor_config.json tokenizer.json tokenizer_config.json \
+                   added_tokens.json special_tokens_map.json vocab.json merges.txt normalizer.json \
+                   onnx/encoder_model_quantized.onnx onnx/decoder_model_merged_quantized.onnx; do
+            curl -fsSL --retry 3 "https://huggingface.co/$R/resolve/main/$f" -o "$D/$f"
+          done
+          du -sh "$D"
+
+      - name: Bergamot (traducción offline ES⇄EN)
+        env:
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          if [ -f models/bergamot/registry.json ] && [ "${FORCE:-false}" != "true" ]; then echo "bergamot ya existe"; exit 0; fi
+          mkdir -p models/bergamot
+          python3 - <<'PY'
+          import json, urllib.request, gzip, os, hashlib
+          idx = json.load(urllib.request.urlopen("https://bergamot.s3.amazonaws.com/models/index.json"))
+          out = {}
+          for pair in ("esen", "enes"):
+              files = idx[pair]
+              os.makedirs(f"models/bergamot/{pair}", exist_ok=True)
+              out[pair] = {}
+              for part, f in files.items():
+                  if not isinstance(f, dict) or "name" not in f:
+                      continue
+                  url = f["name"]
+                  if not url.startswith("http"):
+                      url = "https://bergamot.s3.amazonaws.com/models/" + url
+                  data = urllib.request.urlopen(url).read()
+                  name = os.path.basename(url)
+                  if name.endswith(".gz"):
+                      data = gzip.decompress(data); name = name[:-3]
+                  path = f"models/bergamot/{pair}/{name}"
+                  open(path, "wb").write(data)
+                  out[pair][part] = {"name": path, "size": len(data), "expectedSha256Hash": hashlib.sha256(data).hexdigest()}
+                  print(pair, part, name, round(len(data) / 1e6, 1), "MB")
+          json.dump(out, open("models/bergamot/registry.json", "w"), indent=1)
+          PY
+
       - name: Guardar en el repositorio
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add models
           if git diff --cached --quiet; then echo "Sin cambios"; exit 0; fi
-          git commit -m "Agregar modelos de voz offline (Vosk)"
+          git commit -m "Actualizar modelos offline (voz y traducción)"
           git push
