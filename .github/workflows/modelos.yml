@@ -75,6 +75,27 @@ jobs:
           done
           ls -lh "$D"
 
+      - name: Whisper small para GPU (más preciso; archivos divididos en partes < 100 MB)
+        run: |
+          set -euo pipefail
+          R=onnx-community/whisper-small
+          D=models/hf/$R
+          if [ -f "$D/onnx/decoder_model_merged_quantized.onnx.parts.json" ]; then echo "whisper-small ya existe"; exit 0; fi
+          mkdir -p "$D/onnx"
+          for f in config.json generation_config.json preprocessor_config.json tokenizer.json tokenizer_config.json \
+                   added_tokens.json special_tokens_map.json vocab.json merges.txt normalizer.json; do
+            curl -fsSL --retry 3 "https://huggingface.co/$R/resolve/main/$f" -o "$D/$f"
+          done
+          for f in encoder_model_fp16.onnx decoder_model_merged_quantized.onnx; do
+            curl -fsSL --retry 3 "https://huggingface.co/$R/resolve/main/onnx/$f" -o "$D/onnx/$f"
+            size=$(stat -c %s "$D/onnx/$f")
+            split -b 90m -d -a 1 "$D/onnx/$f" "$D/onnx/$f.part"
+            n=$(ls "$D/onnx/$f".part* | wc -l)
+            echo "{\"parts\": $n, \"size\": $size}" > "$D/onnx/$f.parts.json"
+            rm "$D/onnx/$f"
+            ls -lh "$D/onnx/$f".part*
+          done
+
       - name: Bergamot (traducción offline ES⇄EN)
         env:
           FORCE: ${{ inputs.force }}
