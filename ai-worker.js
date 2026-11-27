@@ -107,6 +107,8 @@ async function run(job, retry) {
     max_new_tokens: Math.min(220, Math.ceil(secs * 7) + 12),
   });
   let text = (out && out.text ? out.text : "").replace(/\s+/g, " ").trim();
+  // listas de dígitos que Whisper escribe como ordinales: "6th, 7th, 8th" → "6 7 8"
+  text = text.replace(/\b\d{1,2}(?:st|nd|rd|th)(?:,?\s+\d{1,2}(?:st|nd|rd|th))+\b/gi, (m) => m.replace(/(st|nd|rd|th)/gi, "").replace(/,/g, ""));
   // "otro, otro, otro" → "otro" (palabras repetidas sin sentido)
   text = text.replace(/\b([\p{L}']+)(?:[,.\s]+\1\b){2,}/giu, "$1");
   if (HALLUCINATIONS.test(text) || isRepetitive(text)) text = "";

@@ -246,7 +246,7 @@
     acc: { medico: 0, legal: 0, bancario: 0, seguros: 0 },
     termsSeen: new Map(),   // entrada → contador
     recent: [],             // últimas frases (contexto para sugerencias)
-    keys: [], keySeq: 0, rowSeq: 0, expect: null,   // información clave (solo memoria)
+    keys: [], keySeq: 0, rowSeq: 0, partSeq: 0, expect: null,   // información clave (solo memoria)
     liveTerms: new Set(),   // términos ya contados en la frase en curso
     count: 0,
   });
@@ -413,7 +413,7 @@
 
   // ───────────────── Transcripción precisa (Whisper local, en un worker) ─────────────────
   // Vosk muestra el texto al instante; Whisper vuelve a transcribir cada frase cerrada y la corrige.
-  let ai = null, aiReady = false, aiFailed = false, aiSeq = 0;
+  let ai = null, aiReady = false, aiFailed = false, aiSeq = 0, aiMode = "";
   const aiJobs = new Map();
   function getAi() {
     if (!cfg.precise || aiFailed || P().whisper === "off" || typeof Worker === "undefined") return null;
@@ -428,7 +428,7 @@
   function onAiMessage(e) {
     const m = e.data || {};
     if (m.type === "progress") { if (m.pct < 100) notice(`Downloading the high-accuracy model (one time only, ~${m.mb} MB)… ${m.pct}%`); }
-    else if (m.type === "ready") { aiReady = true; notice(""); toast(`High-accuracy mode ready${/gpu/.test(m.mode) ? " · using GPU" : ""}`, 2500); }
+    else if (m.type === "ready") { aiReady = true; aiMode = m.mode || ""; notice(""); toast(`High-accuracy mode ready${/gpu/.test(m.mode) ? " · using GPU" : ""}`, 2500); }
     else if (m.type === "error" && !m.id) { aiFailed = true; notice("High-accuracy mode is not available in this browser; using the fast transcript only."); setTimeout(() => notice(""), 6000); }
     else if (m.type === "asr" || m.type === "error") {
       const job = aiJobs.get(m.id); aiJobs.delete(m.id);
@@ -455,38 +455,61 @@
     if (es >= en * 2 + 1) return "es";
     return null;
   }
+  /** ¿La corrección de Whisper es segura? Debe conservar las palabras que el motor rápido entendió con seguridad
+   *  y todos los dígitos; si no, se queda la versión original (evita perder información). */
+  function safeRefinement(part, newText) {
+    const W = (t) => strip(t).replace(/(\d)(st|nd|rd|th)\b/g, "$1").replace(/[^\p{L}\p{N}\s']/gu, " ").split(/\s+/).filter(Boolean);
+    const digitsOf = (t) => (window.KeyInfo ? KeyInfo.numberGroups(strip(t).replace(/(\d)(st|nd|rd|th)\b/g, "$1")).map((g) => g.digits).join("") : (t.match(/\d/g) || []).join(""));
+    const wo = W(part.text), wn = W(newText);
+    if (!wn.length || wn.length > wo.length * 2 + 4) return false;              // alucinación
+    const isNum = (w) => window.KeyInfo && KeyInfo.numberGroups(w).length > 0;
+    const sure = (part.vwords ? part.vwords.filter((x) => (x.conf || 0) >= 0.9).map((x) => strip(x.word)) : wo).filter((w) => !isNum(w) && w.length > 1);
+    const have = new Set(wn);
+    const near = (w) => have.has(w) || (w.length >= 4 && wn.some((x) => Math.abs(x.length - w.length) <= 1 && lev(x, w) <= 1));
+    if (sure.length >= 2 && sure.filter(near).length / sure.length < 0.75) return false;   // dejó fuera palabras seguras
+    if (!part.vwords && wn.length < wo.length * 0.7) return false;
+    const dOld = digitsOf(part.text), dNew = digitsOf(newText);
+    if (dOld.length >= 2 && !dNew.includes(dOld)) return false;                // perdió o cambió números
+    return true;
+  }
+  function lev(a, b) {
+    const m = a.length, n = b.length; if (Math.abs(m - n) > 1) return 2;
+    const d = Array.from({ length: m + 1 }, (_, i) => [i]);
+    for (let j = 1; j <= n; j++) d[0][j] = j;
+    for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    return d[m][n];
+  }
   function applyRefinement(job, text) {
-    if (!session || !job.row.isConnected) return;
+    if (!session || !job.row.isConnected || !job.part) return;
+    const row = job.row, part = job.part;
     const det = detectTextLang(text);
-    if (det && det !== job.lang && job.row._lang === job.lang) {
-      flipRowLang(job.row, true);   // mueve de columna sin volver a pedir Whisper
+    if (det && det !== job.lang && row._lang === job.lang && row._parts.length === 1) {
+      flipRowLang(row, true);   // mueve de columna sin volver a pedir Whisper
       job.lang = det; job.forced = true;
     }
-    const wOld = words(job.text), wNew = words(text);
-    if (wNew.join(" ") === wOld.join(" ")) return;
-    // descarta alucinaciones (mucho texto de más) o cortes (dejó fuera buena parte de lo dicho)
-    if (!job.forced && (wNew.length > wOld.length * 2 + 4 || wNew.length < Math.floor(wOld.length * 0.6))) return;
+    if (words(text).join(" ") === words(part.text).join(" ")) return;
+    if (!job.forced && !safeRefinement(part, text)) return;
     const a = analyze(text);
     const now = Date.now();
     for (const e of a.terms) if (!job.terms.has(e)) {
       job.terms.add(e);
       const v = session.termsSeen.get(e) || { n: 0, t: 0 }; v.n++; v.t = now; session.termsSeen.set(e, v);
     }
-    job.text = text; job.row._text = text;
-    // vuelve a extraer los datos de esta fila con el texto corregido
-    const rid = +job.row.dataset.rid;
-    const kr = extractKeys(a, rid, job.row._ctx);
+    part.text = text;
+    // vuelve a extraer los datos de esta parte con el texto corregido
+    const kr = extractKeys(a, +row.dataset.rid, part.ctx);
     if (kr.items && kr.items.length) {
-      session.keys = session.keys.filter((k) => !(k.rows && k.rows.length === 1 && k.rows[0] === rid && !k.confirmed));
-      storeKeys(kr.items, rid); renderKeys(); renderStrip();
+      session.keys = session.keys.filter((k) => !(k.part === part.id && !k.confirmed));
+      storeKeys(kr.items.map((k) => ({ ...k, part: part.id })), +row.dataset.rid); renderKeys(); renderStrip();
     }
-    const orig = job.row.querySelector(".cell.orig");
-    withStableScroll(() => { orig.innerHTML = a.html; orig.classList.add("refined", "flash"); });
+    part.html = a.html;
+    const orig = row.querySelector(".cell.orig");
+    withStableScroll(() => { renderRow(row); orig.classList.add("refined", "flash"); });
     setTimeout(() => orig.classList.remove("flash"), 900);
     orig.title = "Corrected by the high-accuracy engine";
-    fillTranslation(job.row, text, job.lang);
+    fillTranslation(row, row._text, row._lang);
     renderTerms();
-    if (job.row === $("transcript").lastElementChild) renderSuggestions(suggestionsFor(a));
+    if (row === $("transcript").lastElementChild) renderSuggestions(suggestionsFor(a));
   }
 
   // ───────────────── Scroll estable de la transcripción ─────────────────
@@ -522,9 +545,9 @@
     });
     if (quiet) { lastLang = lang; return; }
     fillTranslation(row, row._text, lang);
-    if (row._audio && cfg.precise && aiReady && getAi()) {
+    if (row._audio && row._parts && row._parts.length === 1 && cfg.precise && aiReady && getAi()) {
       const id = ++aiSeq, audio = row._audio.slice();
-      aiJobs.set(id, { row, text: row._text, lang, terms: new Set(), forced: true });
+      aiJobs.set(id, { row, part: row._parts && row._parts[0], lang, terms: new Set(), forced: true });
       row.classList.add("refining");
       ai.postMessage({ type: "asr", id, lang, audio, conf: 0 }, [audio.buffer]);
     }
@@ -552,6 +575,7 @@
     else text = text.replace(/\b(dos|tres)[\s-]+de\b(?=\s*(?:$|[.,]|impres|anima|modelo|película|pelicula))/gi, (m, w) => (w.toLowerCase() === "dos" ? "2D" : "3D"));
     return text;
   }
+  const MERGE_MS = 2600;   // pedazos de una misma oración separados por pausas cortas se juntan en una fila
   function handleFinal(text, lang, audio, conf, opts) {
     opts = opts || {};
     text = tidy(text.trim(), lang || langOf());
@@ -559,8 +583,8 @@
     lang = lang || langOf();
     // audio poco claro (el motor rápido no está seguro): se muestra atenuado y Whisper lo revisa primero
     const nWords = text.split(/\s+/).length;
-    if (conf !== undefined && conf !== null && conf < UNCLEAR_CONF && !opts.replace) {
-      if (nWords < 3 && conf < 0.45) return;   // ruido
+    if (conf !== undefined && conf !== null && conf < UNCLEAR_CONF && !opts.replace && !numericMostly(text)) {
+      if (nWords < 2 && conf < 0.3) return;   // ruido
       return addUnclearRow(text, lang, audio, conf);
     }
     const a = analyze(text);
@@ -574,44 +598,67 @@
       v.t = now; session.termsSeen.set(e, v);
     }
     session.liveTerms.clear();
-    const rowId = ++session.rowSeq;
-    const ctxExpect = session.expect;
-    const kr = extractKeys(a, rowId, ctxExpect);
-    session.expect = kr.expect || null;
-    storeKeys(kr.items || [], rowId);
 
     const tr = $("transcript");
-    if (session.count === 1) tr.innerHTML = "";
-    const row = document.createElement("div");
-    row.dataset.rid = rowId; row._ctx = ctxExpect;
+    if (!tr.querySelector(".trow")) tr.innerHTML = "";
+    const last = tr.lastElementChild;
+    // no se junta si lo anterior era una pregunta o si esto empieza como respuesta (otro turno de la conversación)
+    const prevPart = last && last._parts && last._parts[last._parts.length - 1];
+    const newTurn = /^(yes|yeah|yep|no|nope|okay|ok|sure|right|correct|exactly|hello|hi|thank|thanks|si|sí|claro|correcto|exacto|bueno|hola|gracias|perfecto|de acuerdo)\b/i.test(text) || a.question;
+    const merge = !opts.replace && last && last._parts && !last.classList.contains("unclear") && last._lang === lang
+      && now - last._t < MERGE_MS && !/[.?!…]\s*$/.test(last._text) && last._parts.length < 8
+      && !(prevPart && prevPart.question) && !newTurn;
+    const rowId = merge ? +last.dataset.rid : ++session.rowSeq;
+    const ctxExpect = session.expect;
+    const part = { id: ++session.partSeq, text, vwords: opts.words || null, terms: new Set(a.terms), ctx: ctxExpect, question: a.question };
+    const kr = extractKeys(a, rowId, ctxExpect);
+    part.html = a.html;
+    session.expect = kr.expect || null;
+    storeKeys((kr.items || []).map((k) => ({ ...k, part: part.id })), rowId);
+
+    let row;
     const tags = [...a.doms, ...(a.question ? ["duda"] : [])];
-    row.className = "trow " + (a.doms[0] || "");
-    const origCell = `<div class="cell orig" lang="${lang}">${a.html}</div>`;
-    const xlCell = `<div class="cell xl" lang="${lang === "es" ? "en" : "es"}"></div>`;
-    row._lang = lang; row._text = text;
-    row.innerHTML = `<div class="meta"><span class="time">${fmtTime(elapsed())}</span><button type="button" class="lang" title="Wrong language? Click to switch EN ⇄ ES">${lang.toUpperCase()}</button>${tags.map((t) => `<span class="tag ${t}">${DOM_LABEL[t]}</span>`).join("")}</div>`
-      + (lang === "en" ? origCell + xlCell : xlCell + origCell);
-    withStableScroll(() => {
-      if (opts.replace && opts.replace.isConnected) opts.replace.replaceWith(row);
-      else tr.appendChild(row);
-      while (tr.children.length > 400) tr.firstChild.remove();
-    });
-    if (!pinned && !opts.replace) { unseenRows++; updateJump(); }
+    if (merge) {
+      row = last;
+      withStableScroll(() => {
+        row._parts.push(part);
+        tags.forEach((t) => row._tags.add(t));
+        renderRow(row);
+      });
+    } else {
+      row = document.createElement("div");
+      row.dataset.rid = rowId;
+      row._lang = lang; row._parts = [part]; row._tags = new Set(tags); row._time = fmtTime(elapsed());
+      row.className = "trow " + (a.doms[0] || "");
+      row.innerHTML = `<div class="meta"></div><div class="cell orig" lang="${lang}"></div><div class="cell xl" lang="${lang === "es" ? "en" : "es"}"></div>`;
+      if (lang !== "en") row.insertBefore(row.querySelector(".cell.xl"), row.querySelector(".cell.orig"));
+      renderRow(row);
+      withStableScroll(() => {
+        if (opts.replace && opts.replace.isConnected) opts.replace.replaceWith(row);
+        else tr.appendChild(row);
+        while (tr.children.length > 400) tr.firstChild.remove();
+      });
+      if (!pinned && !opts.replace) { unseenRows++; updateJump(); }
+    }
+    row._t = now;
     if (opts.refined) { const o = row.querySelector(".cell.orig"); o.classList.add("refined", "flash"); setTimeout(() => o.classList.remove("flash"), 900); }
     clearInterim();
-    fillTranslation(row, text, lang);
+    fillTranslation(row, row._text, lang);   // se traduce la oración completa (no pedazos)
 
     // corrección con Whisper: en Max todas las frases; en Balanced solo las que el motor rápido no entendió bien
-    const needs = P().whisper === "all" || (P().whisper === "low" && (conf === undefined || conf === null || conf < LOW_CONF || opts.ambiguous));
-    if (needs && audio && audio.length > 8000 && cfg.precise && aiReady && getAi()) {
+    const gpuFast = /gpu/.test(aiMode);
+    const needs = P().whisper === "all" || gpuFast || (P().whisper === "low" && (conf === undefined || conf === null || conf < LOW_CONF || opts.ambiguous));
+    if (needs && audio && audio.length > 8000 && cfg.precise && aiReady && getAi() && !numericMostly(text)) {
       const id = ++aiSeq;
-      aiJobs.set(id, { row, text, lang, terms: new Set(a.terms) });
+      aiJobs.set(id, { row, part, lang, terms: part.terms });
       row.classList.add("refining");
-      row._audio = audio.slice();   // copia (últimas 30 frases) para poder re-transcribir si se corrige el idioma
-      const withAudio = [...tr.querySelectorAll(".trow")].filter((r) => r._audio);
-      while (withAudio.length > 30) withAudio.shift()._audio = null;
+      if (row._parts.length === 1) {
+        row._audio = audio.slice();   // copia (últimas 30 frases) para poder re-transcribir si se corrige el idioma
+        const withAudio = [...tr.querySelectorAll(".trow")].filter((r) => r._audio);
+        while (withAudio.length > 30) withAudio.shift()._audio = null;
+      } else row._audio = null;
       // en modo Auto, Whisper confirma el idioma si la decisión fue dudosa (o siempre, en perfil Max)
-      const detect = !!opts.auto && (opts.ambiguous || P().whisper === "all");
+      const detect = !!opts.auto && row._parts.length === 1 && (opts.ambiguous || P().whisper === "all" || gpuFast);
       ai.postMessage({ type: "asr", id, lang, audio, conf: conf || 0, detect }, [audio.buffer]);
     }
 
@@ -619,6 +666,20 @@
     updatePriority(a, kr.items || []);   // Routine / Important / Urgent
     renderSuggestions(contextSuggestions(a));
     renderMeter(); renderTerms(); renderKeys(); renderStrip();
+  }
+  /** Dibuja una fila a partir de sus partes. */
+  function renderRow(row) {
+    row._text = row._parts.map((p) => p.text).join(" ");
+    const meta = row.querySelector(".meta");
+    meta.innerHTML = `<span class="time">${row._time}</span><button type="button" class="lang" title="Wrong language? Click to switch EN ⇄ ES">${row._lang.toUpperCase()}</button>${[...row._tags].map((t) => `<span class="tag ${t}">${DOM_LABEL[t]}</span>`).join("")}`;
+    row.querySelector(".cell.orig").innerHTML = row._parts.map((p) => p.html).join(" ");
+  }
+  /** Frases que son casi solo números: el motor rápido dicta dígitos mejor que Whisper; no se corrigen. */
+  function numericMostly(t) {
+    const w = strip(t).split(/\s+/).filter(Boolean);
+    if (!w.length || !window.KeyInfo) return false;
+    const nums = KeyInfo.numberGroups(strip(t)).reduce((n, g) => n + g.raw.split(/\s+/).length, 0);
+    return nums / w.length >= 0.6;
   }
   // ───────────────── Importancia de la llamada ─────────────────
   const PRIORITY = [
@@ -927,7 +988,7 @@
     if (audioCtx.state === "suspended") { try { await audioCtx.resume(); } catch { /* */ } }
     const rate = audioCtx.sampleRate;
 
-    const v = { recs: [], partial: {}, partialAt: 0, partialText: "", seg: null, speaking: false, silentSince: 0, floor: 0.004, chunks: [], samples: 0 };
+    const v = { recs: [], partial: {}, partialAt: 0, partialText: "", seg: null, speaking: false, silentSince: 0, floor: 0.004, chunks: [], samples: 0, pre: [], gain: 1 };
     // audio de la frase en curso (para que Whisper la vuelva a transcribir con más precisión)
     const takeAudio = () => {
       const chunks = v.chunks, overflow = v.overflow; v.chunks = []; const n = v.samples; v.samples = 0; v.overflow = false;
@@ -959,11 +1020,11 @@
       }
       // descarta ruido: 1–2 palabras con baja confianza
       const bw = seg[best], bavg = bw.reduce((t, x) => t + (x.conf || 0), 0) / bw.length;
-      if (bw.length <= 2 && bavg < 0.8) return;
-      if (bavg < 0.4 && bw.length < 6) return;   // ruido o música en ambos idiomas
+      if (bw.length === 1 && /^(uh|um|eh|ah|mm|hmm|huh|the|a|el|la|e|y|o)$/.test(bw[0].word)) return;   // muletilla suelta
+      if (bavg < 0.3 && bw.length < 4) return;   // ruido o música en ambos idiomas
       lastLang = best;
       handleInterim("");
-      handleFinal(seg[best].map((x) => x.word).join(" "), best, takeAudio(), bavg, { ambiguous, auto: true });
+      handleFinal(seg[best].map((x) => x.word).join(" "), best, takeAudio(), bavg, { ambiguous, auto: true, words: seg[best] });
     };
     for (let i = 0; i < models.length; i++) {
       const lg = langs[i];
@@ -981,7 +1042,7 @@
         if (!auto) {
           const w = res.result || [];
           const conf = w.length ? w.reduce((t, x) => t + (x.conf || 0), 0) / w.length : 0;
-          handleInterim(""); handleFinal(res.text, lg, takeAudio(), conf); return;
+          handleInterim(""); handleFinal(res.text, lg, takeAudio(), conf, { words: w }); return;
         }
         if (!v.seg) v.seg = { es: [], en: [] };
         v.seg[lg].push(...(res.result || res.text.split(" ").map((w) => ({ word: w, conf: 0.5 }))));
@@ -1011,16 +1072,23 @@
     const proc = audioCtx.createScriptProcessor(rate <= 16000 ? 1024 : 2048, 1, 1);
     proc.onaudioprocess = (e) => {
       if (state !== "running" || gen !== voskGen) return;
-      const data = e.inputBuffer.getChannelData(0);
+      const raw = e.inputBuffer.getChannelData(0);
+      // control automático de volumen (AGC): sube el audio bajo (p. ej. de una pestaña) a un nivel estable
+      let sq = 0; for (let i = 0; i < raw.length; i += 2) sq += raw[i] * raw[i];
+      const lvl = Math.sqrt(sq / (raw.length / 2));
+      // lento (no cambia dentro de una palabra) y solo sube el audio bajo; nunca baja el que ya está bien
+      if (lvl > 0.006) { const want = Math.min(6, Math.max(1, 0.05 / lvl)); v.gain += (want - v.gain) * (want < v.gain ? 0.25 : 0.015); }
+      const data = new Float32Array(raw.length);
+      for (let i = 0; i < raw.length; i++) { const x = raw[i] * v.gain; data[i] = x > 0.98 ? 0.98 : x < -0.98 ? -0.98 : x; }
       for (const r of v.recs) { try { r.acceptWaveformFloat(data, rate); } catch { /* */ } }
       // se guarda el audio de la frase en curso desde el inicio (aunque Whisper siga cargando)
       if (cfg.precise && !aiFailed && (v.speaking || v.partialText || v.samples)) {
-        v.chunks.push(data.slice()); v.samples += data.length;
+        if (!v.samples && v.pre.length) { for (const c of v.pre) { v.chunks.push(c); v.samples += c.length; } v.pre = []; }   // incluye el inicio de la frase
+        v.chunks.push(data); v.samples += data.length;
         while (v.samples > rate * 28) { v.samples -= v.chunks.shift().length; v.overflow = true; }  // Whisper procesa hasta 30 s
-      }
+      } else { v.pre.push(data); let n = 0; for (const c of v.pre) n += c.length; while (n > rate * 0.45) n -= v.pre.shift().length; }
       // detector de voz por energía con piso de ruido adaptativo
-      let sum = 0; for (let i = 0; i < data.length; i += 4) sum += data[i] * data[i];
-      const rms = Math.sqrt(sum / (data.length / 4));
+      const rms = lvl;   // el detector de voz mide el audio original (sin amplificar)
       const now = performance.now();
       const speech = rms > Math.max(0.008, v.floor * 3);
       if (!speech) v.floor = v.floor * 0.95 + rms * 0.05;

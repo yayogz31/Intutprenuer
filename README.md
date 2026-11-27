@@ -31,6 +31,14 @@ Botones **Iniciar**, **Pausar/Reanudar** y **Terminar**. Atajos: `Alt+S`, `Alt+P
 
 Si hay tarjeta de video compatible, Whisper la usa; si es débil, usa el procesador.
 
+## Pausas y precisión
+
+- **Las pausas ya no cortan la información:** los pedazos de una misma oración separados por pausas cortas se unen en una sola fila, y la traducción se hace sobre la oración completa. No se unen si lo anterior era una pregunta o si lo nuevo empieza como respuesta ("yes", "no", "sí"…), para respetar los turnos.
+- **No se descartan respuestas cortas** como "yes", "sí" o un número suelto.
+- **Whisper ya no puede borrar información:** solo reemplaza una frase si conserva las palabras que el motor rápido entendió con seguridad y todos los dígitos. Las frases que son casi solo números (SSN, teléfono…) las deja al motor rápido, que dicta mejor los dígitos.
+- **Control automático de volumen:** el audio bajo (por ejemplo, de una pestaña) se sube a un nivel estable antes de reconocerlo.
+- **Con tarjeta de video**, Whisper revisa todas las frases.
+
 ## Novedades
 
 - **Audio poco claro:** si el motor rápido no está seguro (ruido, música, otro idioma), la frase aparece atenuada como *Unclear audio* en lugar de mostrar texto sin sentido. Whisper la revisa y, si la entiende, la reemplaza por la frase correcta.
