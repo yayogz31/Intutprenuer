@@ -7,7 +7,7 @@
   const $ = (id) => document.getElementById(id);
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const DOMS = ["medico", "legal", "bancario", "seguros"];
-  const DOM_LABEL = { medico: "Medical", legal: "Legal", bancario: "Banking", seguros: "Insurance", duda: "Question", general: "General", aviso: "Disclosure", tarjeta: "Card", confirm: "Read back", verify: "Verify", policy: "Not allowed" };
+  const DOM_LABEL = { medico: "Medical", legal: "Legal", bancario: "Banking", seguros: "Insurance", duda: "Question", general: "General", aviso: "Disclosure", tarjeta: "Card", confirm: "Read back", verify: "Verify", policy: "Not allowed", interp: "To interpreter" };
   const TAB_FOR_DOM = { medico: "Medical", legal: "Legal", bancario: "Banking", seguros: "Insurance" };
 
   // ───────────────── Utilidades ─────────────────
@@ -86,6 +86,13 @@
   }
   // "My terms": palabras propias con su traducción preferida (tienen prioridad y se aplican a la traducción automática)
   let myTerms = store.get("inturp.myterms", []);
+  // Correcciones de transcripción aprendidas ("carrot her" → "character"): se aplican a todo texto nuevo
+  let fixes = store.get("inturp.fixes", []);
+  let fixRes = [];
+  function buildFixes() {
+    fixRes = fixes.filter((f) => f.heard && f.correct).map((f) => ({ re: new RegExp(`(?<![\\p{L}\\p{N}])${reEsc(f.heard.trim()).replace(/\s+/g, "\\s+")}(?![\\p{L}\\p{N}])`, "giu"), to: f.correct.trim() }));
+  }
+  function applyFixes(t) { for (const f of fixRes) t = t.replace(f.re, f.to); return t; }
   function loadGlossary() {
     const extra = store.get("inturp.gloss", null);
     const base = (window.GLOSARIO_BASE || []).map((e) => ({ ...e, dom: normDom(e.dom) }));
@@ -215,7 +222,7 @@
     const rules = (window.REGLAS || []).slice().sort((x, y) => (y.prio || 0) - (x.prio || 0));
     for (const r of rules) {
       r.re.lastIndex = 0;
-      if (r.re.test(a.n)) for (const s of r.s) push(s, r.dom);
+      if (r.re.test(a.n)) for (const s of r.s) push({ es: fill(s.es), en: fill(s.en) }, r.dom);
     }
     for (const c of allCards()) {
       if (c._re && (c._re.lastIndex = 0, c._re.test(a.n))) push({ es: fill(c.es), en: fill(c.en), titulo: c.titulo }, c.cat === "Disclosures" ? "aviso" : "tarjeta");
@@ -235,7 +242,12 @@
       for (const s of (window.SUGERENCIAS_DEFECTO || {})[lead || "general"] || []) push(s, lead || "general");
     }
     // primero: verificar datos, luego avisos (disclosures)
-    const rank = (d) => (d === "policy" ? 4 : d === "verify" ? 3 : d === "aviso" ? 2 : d === "confirm" ? 1 : 0);
+    const rank = (d) => (d === "policy" ? 5 : d === "interp" ? 4 : d === "verify" ? 3 : d === "aviso" ? 2 : d === "confirm" ? 1 : 0);
+    // el intérprete SÍ puede dar su nombre e ID: en ese caso no aplica la alerta de datos personales
+    if (out.some((x) => x.dom === "interp" && /^My name is/.test(x.en || ""))) for (let i = out.length - 1; i >= 0; i--) if (out[i].dom === "policy") out.splice(i, 1);
+    // si hay una sugerencia específica para el intérprete, la genérica sobra
+    const spec = out.filter((x) => x.dom === "interp" && !/^\(Addressed/.test(x.en || ""));
+    if (spec.length) for (let i = out.length - 1; i >= 0; i--) if (out[i].dom === "interp" && /^\(Addressed/.test(out[i].en || "")) out.splice(i, 1);
     out.sort((x, y) => rank(y.dom) - rank(x.dom));
     return out.slice(0, 7);
   }
@@ -264,7 +276,7 @@
     if (!list.length) return;
     const [p1, p2] = primaryOrder();
     box.innerHTML = list.map((s) => `
-      <div class="sugg${s.older ? " older" : ""}${s.dom === "policy" ? " policy-s" : ""}" data-${p1}="${esc(s[p1] || "")}" data-${p2}="${esc(s[p2] || "")}">
+      <div class="sugg${s.older ? " older" : ""}${s.dom === "policy" ? " policy-s" : s.dom === "interp" ? " interp-s" : ""}" data-${p1}="${esc(s[p1] || "")}" data-${p2}="${esc(s[p2] || "")}">
         <span class="src tag ${s.dom}">${esc(s.titulo && s.dom === "tarjeta" ? s.titulo : (DOM_LABEL[s.dom] || s.dom))}</span>
         <div class="pri" data-l="${p1}">${esc(s[p1] || s[p2])}</div>${s[p2] && s[p1] ? `<div class="sec" data-l="${p2}">${esc(s[p2])}</div>` : ""}
       </div>`).join("");
@@ -487,6 +499,7 @@
       flipRowLang(row, true);   // mueve de columna sin volver a pedir Whisper
       job.lang = det; job.forced = true;
     }
+    text = applyFixes(text);
     if (words(text).join(" ") === words(part.text).join(" ")) return;
     if (!job.forced && !safeRefinement(part, text)) return;
     const a = analyze(text);
@@ -571,10 +584,12 @@
   /** Procesa una frase final. lang = "es" | "en" (idioma en que se dijo). audio = Float32Array 16 kHz (opcional). */
   /** Arreglos comunes del motor rápido: "three d" → "3D", "two d" → "2D". */
   function tidy(text, lang) {
+    text = applyFixes(text);
     if (lang === "en") text = text.replace(/\b(two|three|four)[\s-]+d\b/gi, (m, w) => ({ two: "2", three: "3", four: "4" })[w.toLowerCase()] + "D");
     else text = text.replace(/\b(dos|tres)[\s-]+de\b(?=\s*(?:$|[.,]|impres|anima|modelo|película|pelicula))/gi, (m, w) => (w.toLowerCase() === "dos" ? "2D" : "3D"));
     return text;
   }
+  const TO_INTERP = /\b(interpreter|interprete|tell (her|him|them|the patient)|ask (her|him|them|the patient)|digale|preguntele|dile|preguntale)\b/;
   const MERGE_MS = 2600;   // pedazos de una misma oración separados por pausas cortas se juntan en una fila
   function handleFinal(text, lang, audio, conf, opts) {
     opts = opts || {};
@@ -617,7 +632,7 @@
     storeKeys((kr.items || []).map((k) => ({ ...k, part: part.id })), rowId);
 
     let row;
-    const tags = [...a.doms, ...(a.question ? ["duda"] : [])];
+    const tags = [...a.doms, ...(a.question ? ["duda"] : []), ...(TO_INTERP.test(a.n) ? ["interp"] : [])];
     if (merge) {
       row = last;
       withStableScroll(() => {
@@ -671,8 +686,21 @@
   function renderRow(row) {
     row._text = row._parts.map((p) => p.text).join(" ");
     const meta = row.querySelector(".meta");
-    meta.innerHTML = `<span class="time">${row._time}</span><button type="button" class="lang" title="Wrong language? Click to switch EN ⇄ ES">${row._lang.toUpperCase()}</button>${[...row._tags].map((t) => `<span class="tag ${t}">${DOM_LABEL[t]}</span>`).join("")}`;
+    meta.innerHTML = `<span class="time">${row._time}</span><button type="button" class="lang" title="Wrong language? Click to switch EN ⇄ ES">${row._lang.toUpperCase()}</button><button type="button" class="fix" title="Select a misheard word, then click to correct it from now on">Fix</button>${[...row._tags].map((t) => `<span class="tag ${t}">${DOM_LABEL[t]}</span>`).join("")}`;
     row.querySelector(".cell.orig").innerHTML = row._parts.map((p) => p.html).join(" ");
+  }
+  /** Aplica las correcciones a las frases ya mostradas (y las vuelve a traducir). */
+  function reapplyFixes() {
+    if (!session) return;
+    for (const row of [...$("transcript").querySelectorAll(".trow")].slice(-60)) {
+      if (!row._parts) continue;
+      let changed = false;
+      for (const p of row._parts) {
+        const t = applyFixes(p.text);
+        if (t !== p.text) { p.text = t; const a = analyze(t); p.html = a.html; changed = true; }
+      }
+      if (changed) { withStableScroll(() => renderRow(row)); fillTranslation(row, row._text, row._lang); }
+    }
   }
   /** Frases que son casi solo números: el motor rápido dicta dígitos mejor que Whisper; no se corrigen. */
   function numericMostly(t) {
@@ -762,6 +790,7 @@
     clearTimeout(interimT);
     interimT = setTimeout(() => {
       if (!session) return;
+      text = applyFixes(text);
       const a = analyze(text);
       const box = $("interim"); box.classList.add("on");
       const o = box.querySelector(`.cell[data-l="${lang}"]`), x = box.querySelector(`.cell[data-l="${lang === "es" ? "en" : "es"}"]`);
@@ -958,7 +987,7 @@
 
   // Cierre de frase rápido: si hay 0.55 s de silencio (o el texto parcial no cambia en 1.1 s) se cierra la frase,
   // en lugar de esperar los 1–2 s que usa el modelo por defecto.
-  const SILENCE_MS = 700, STABLE_MS = 1400;
+  const SILENCE_MS = 450, STABLE_MS = 1100;   // cierre rápido: los pedazos de una misma oración se unen después (MERGE_MS)
   let lastLang = "es";
 
   async function startVosk() {
@@ -1346,7 +1375,42 @@
     const renderMyTerms = () => {
       $("myTermsList").innerHTML = myTerms.length ? myTerms.map((m, i) => `<div class="myterm"><span><b>${esc(m.en)}</b> → ${esc(m.es)}</span><button type="button" data-i="${i}" title="Delete">×</button></div>`).join("") : `<p class="hint">No terms yet.</p>`;
     };
-    $("btnAddTerm").onclick = () => { $("termForm").reset(); $("termInfo").textContent = ""; renderMyTerms(); $("dlgTerm").showModal(); };
+    const renderFixes = () => {
+      $("fixList").innerHTML = fixes.length ? fixes.map((f, i) => `<div class="myterm"><span>${esc(f.heard)} → <b>${esc(f.correct)}</b></span><button type="button" data-i="${i}" title="Delete">×</button></div>`).join("") : `<p class="hint">No corrections yet.</p>`;
+    };
+    const showVocabTab = (t) => {
+      for (const b of $("vocabTabs").children) b.classList.toggle("on", b.dataset.vt === t);
+      $("vtFix").hidden = t !== "fix"; $("vtTr").hidden = t !== "tr";
+    };
+    const openVocab = (tab, heard) => {
+      $("termForm").reset(); $("termInfo").textContent = ""; $("fixInfo").textContent = "";
+      renderMyTerms(); renderFixes(); showVocabTab(tab || "fix");
+      if (heard) { $("fixHeard").value = heard; $("termEn").value = heard; }
+      $("dlgTerm").showModal();
+      setTimeout(() => (heard ? $("fixCorrect") : $("fixHeard")).focus(), 30);
+    };
+    $("btnAddTerm").onclick = () => openVocab("fix");
+    $("btnVocab").onclick = () => openVocab("fix");
+    $("vocabTabs").onclick = (e) => { const b = e.target.closest("button"); if (b) showVocabTab(b.dataset.vt); };
+    $("btnSaveFix").onclick = () => {
+      const heard = $("fixHeard").value.trim(), correct = $("fixCorrect").value.trim();
+      if (!heard || !correct) { $("fixInfo").textContent = "Write what was heard and what it should be."; return; }
+      fixes = fixes.filter((f) => strip(f.heard) !== strip(heard)).concat([{ heard, correct }]);
+      store.set("inturp.fixes", fixes); buildFixes(); renderFixes(); reapplyFixes();
+      $("fixHeard").value = ""; $("fixCorrect").value = ""; $("fixInfo").textContent = `Saved: “${heard}” → “${correct}”`;
+    };
+    $("fixList").onclick = (e) => {
+      const b = e.target.closest("button[data-i]"); if (!b) return;
+      fixes.splice(+b.dataset.i, 1); store.set("inturp.fixes", fixes); buildFixes(); renderFixes();
+    };
+    // botón Fix de cada fila: usa lo que tengas seleccionado en esa fila
+    $("transcript").addEventListener("click", (e) => {
+      const b = e.target.closest(".trow .fix"); if (!b) return;
+      const row = b.closest(".trow");
+      const sel = String(window.getSelection ? window.getSelection() : "").trim();
+      const inRow = sel && row.contains(window.getSelection().anchorNode);
+      openVocab("fix", inRow ? sel : "");
+    });
     $("btnSaveTerm").onclick = () => {
       const en = $("termEn").value.trim(), es = $("termEs").value.trim();
       if (!en || !es) { $("termInfo").textContent = "Write the English term and your preferred Spanish translation."; return; }
@@ -1494,6 +1558,7 @@
     window.addEventListener("pagehide", () => { stopRecognition(); cleanupAudio(); session = null; $("notes").value = ""; });
   }
 
+  buildFixes();
   loadGlossary();
   bind();
   renderCards();

@@ -271,3 +271,15 @@ details summary { cursor: pointer; color: var(--acc); font-size: 13px; }
 .col-transcript .panel-head { flex-wrap: wrap; row-gap: 4px; }
 .col-transcript .head-actions { flex-wrap: wrap; justify-content: flex-end; }
 @media (max-width: 1400px) { #colsMode button[data-cols="orig"] { max-width: 120px; overflow: hidden; text-overflow: ellipsis; } }
+.tag.interp { color: #fff; background: var(--acc-strong); border-color: var(--acc-strong); }
+.sugg.interp-s { border-color: rgba(61,123,253,.6); background: rgba(61,123,253,.08); }
+
+/* vocabulario */
+.vocab-tabs { align-self: flex-start; }
+.vocab-tabs button { padding: 4px 12px; font-size: 12.5px; }
+.vt { display: flex; flex-direction: column; gap: 10px; }
+.vt[hidden] { display: none; }
+button.fix { border: 1px solid var(--line2); background: transparent; color: var(--mut); border-radius: 4px; font-size: 10px; line-height: 16px; padding: 0 6px; cursor: pointer; opacity: 0; transition: opacity .15s; font-family: inherit; }
+.trow:hover button.fix, button.fix:focus-visible { opacity: 1; }
+button.fix:hover { color: var(--tx); border-color: var(--acc); }
+@media (max-width: 1180px) { #btnVocab { display: none; } }

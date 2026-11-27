@@ -89,6 +89,26 @@ window.REGLAS = [
   // ── Riesgo (jerga penitenciaria) ──
   { dom: "legal", prio: 3, re: /\b(dutch act|doing the dutch|suicid\w*|quitarme la vida|matarme|kill myself)\b/,
     s: [{ es: "⚠ Posible riesgo de suicidio: interprete fielmente e informe al personal de inmediato.", en: "⚠ Possible suicide risk: interpret faithfully and alert staff immediately." }] },
+
+  // ── Le hablan al intérprete (aparecen primero, con la etiqueta "To interpreter") ──
+  { dom: "interp", prio: 5, re: /\b(interpreter|interprete)\b.{0,40}\b(name|id|number|nombre|numero|codigo)\b|\b(your|su) (interpreter )?(id|interpreter number|numero de interprete)\b|\bwho (am i|is) (speaking|talking) (with|to)\b/,
+    s: [{ en: "My name is {nombre}, interpreter ID {id}.", es: "Mi nombre es {nombre}, intérprete número {id}." }] },
+  { dom: "interp", prio: 5, re: /\b(interpreter|interprete)\b.{0,30}\b(are you (there|still there|on the line)|can you hear me|sigue ahi|esta ahi|me escucha)\b|\b(are you (there|still there|on the line)|can you hear me|sigue en la linea|me escucha)\b.{0,20}\b(interpreter|interprete)\b/,
+    s: [{ en: "Yes, the interpreter is on the line.", es: "Sí, el intérprete está en la línea." }] },
+  { dom: "interp", prio: 5, re: /\b(tell (her|him|them|the patient|the client|the caller)|ask (her|him|them|the patient|the client|the caller)|let (her|him|them) know|digale|preguntele|dile|preguntale|digales|preguntales)\b/,
+    s: [{ en: "The interpreter will interpret everything you say; please speak directly to the patient/caller in the first person.", es: "El intérprete interpretará todo lo que diga; por favor hable directamente con la persona, en primera persona." }] },
+  { dom: "interp", prio: 5, re: /\b(interpreter|interprete)\b.{0,25}\b(what did (she|he|they) say|que dijo|que fue lo que dijo)\b|\b(what did (she|he|they) (just )?say|que (fue lo que )?dijo)\b/,
+    s: [{ en: "The interpreter will repeat the last rendition.", es: "El intérprete repetirá la última interpretación." }] },
+  { dom: "interp", prio: 5, re: /\b(interpreter|interprete)\b.{0,40}\b(explain|what do you think|your opinion|advise|recommend|explique|que opina|recomienda|aconseja)\b|\b(can you|could you) (explain (it|this|that) to (her|him|them))\b/,
+    s: [{ en: "As the interpreter I can't explain, add information or give opinions, but I can interpret your explanation.", es: "Como intérprete no puedo explicar, agregar información ni dar opiniones, pero puedo interpretar su explicación." }] },
+  { dom: "interp", prio: 5, re: /\b(interpreter|interprete)\b.{0,30}\b(hold|stay on the line|one moment|wait|espere|no cuelgue|un momento)\b|\b(hold on|please hold|stay on the line)\b.{0,20}\b(interpreter|interprete)\b/,
+    s: [{ en: "Understood, the interpreter will remain on the line.", es: "Entendido, el intérprete permanecerá en la línea." }] },
+  { dom: "interp", prio: 5, re: /\b(thank you|thanks|gracias)\b.{0,15}\b(interpreter|interprete)\b|\b(interpreter|interprete)\b.{0,10}\b(thank you|thanks|gracias)\b/,
+    s: [{ en: "You're welcome. If there's nothing else to interpret, the interpreter will now disconnect.", es: "De nada. Si no hay nada más que interpretar, el intérprete se desconectará." }] },
+  { dom: "interp", prio: 5, re: /\b(interpreter|interprete)\b.{0,30}\b(repeat|say that again|repita|repetir)\b/,
+    s: [{ en: "Certainly, the interpreter will repeat.", es: "Claro, el intérprete repetirá." }] },
+  { dom: "interp", prio: 4, re: /\b(interpreter|interprete)\b/,
+    s: [{ en: "(Addressed to you) Respond briefly as the interpreter, then continue interpreting.", es: "(Le hablan a usted) Responda brevemente como intérprete y siga interpretando." }] },
 ];
 
 /* Sugerencias por defecto cuando no hay coincidencias, según el dominio dominante de la llamada. */

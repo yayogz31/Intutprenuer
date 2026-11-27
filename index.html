@@ -42,6 +42,7 @@
         <button id="btnStop" class="btn stop" disabled><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg><span>End</span></button>
       </div>
       <div class="ctl-group">
+        <button id="btnVocab" class="btn ghost" title="Fix misheard words and set your preferred translations">Vocabulary</button>
         <span id="status" class="status idle">Idle</span>
         <span id="timer" class="timer">00:00</span>
         <button id="btnSettings" class="btn ghost icon" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
@@ -134,7 +135,7 @@
       <div class="box box-terms" data-box="terms">
         <div class="panel-head box-head">
           <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev" aria-hidden="true"></span><h2>Terminology</h2></button>
-          <span class="head-actions"><span id="termCount" class="badge">0</span> <button id="btnAddTerm" class="btn ghost tiny" title="Add your own terms with your preferred translation">+ My term</button></span>
+          <span class="head-actions"><span id="termCount" class="badge">0</span> <button id="btnAddTerm" class="btn ghost tiny" title="Fix misheard words and set your preferred translations">Vocabulary</button></span>
         </div>
         <div class="box-tools"><input id="glossSearch" class="search slim" type="search" placeholder="Search the glossary…"></div>
         <div id="glossResults" class="terms gloss-results"></div>
@@ -223,25 +224,41 @@
     </form>
   </dialog>
 
-  <!-- My terms -->
+  <!-- Vocabulary: traducciones preferidas + correcciones de transcripción -->
   <dialog id="dlgTerm">
     <form id="termForm" method="dialog" class="dlg">
-      <h2>My terms</h2>
-      <p class="hint">Add words you want translated your way. They are highlighted in the transcript and applied to the live translation (e.g. <b>adjuster → perito de seguros</b>).</p>
-      <label>English term <input id="termEn" type="text" placeholder="adjuster"></label>
-      <label>Preferred Spanish translation <input id="termEs" type="text" placeholder="perito de seguros"></label>
-      <label>Note / definition (optional) <input id="termNote" type="text" placeholder="Insurance professional who assesses the damage"></label>
-      <label>Domain
-        <select id="termDom"><option value="general">General</option><option value="medico">Medical</option><option value="legal">Legal</option><option value="bancario">Banking</option><option value="seguros">Insurance</option></select>
-      </label>
-      <p id="termInfo" class="hint"></p>
-      <div class="row end">
-        <button class="btn ghost" value="cancel" formnovalidate>Close</button>
-        <button id="btnSaveTerm" type="button" class="btn primary">Save term</button>
+      <h2>Vocabulary</h2>
+      <p class="hint">Teach the app your words. Everything here is saved only in this browser and applied automatically from now on.</p>
+      <div id="vocabTabs" class="seg vocab-tabs">
+        <button type="button" data-vt="fix" class="on">Fix transcription</button>
+        <button type="button" data-vt="tr">Translate as</button>
       </div>
-      <h3>Saved terms</h3>
-      <div id="myTermsList" class="mytermslist"></div>
-      <p class="hint">Saved only in this browser.</p>
+
+      <section id="vtFix" class="vt">
+        <p class="hint">When the app mishears a word, write what it heard and what it should be (e.g. <b>carrot her → character</b>, <b>three d → 3D</b>). It is corrected in new sentences and in the ones already on screen.</p>
+        <label>Heard (wrong) <input id="fixHeard" type="text" placeholder="carrot her"></label>
+        <label>Should be <input id="fixCorrect" type="text" placeholder="character"></label>
+        <p id="fixInfo" class="hint"></p>
+        <div class="row end"><button id="btnSaveFix" type="button" class="btn primary">Save correction</button></div>
+        <h3>Saved corrections</h3>
+        <div id="fixList" class="mytermslist"></div>
+      </section>
+
+      <section id="vtTr" class="vt" hidden>
+        <p class="hint">Words you want translated your way (e.g. <b>adjuster → perito de seguros</b>). They are highlighted in the transcript and enforced in the live translation, in both directions.</p>
+        <label>English term <input id="termEn" type="text" placeholder="adjuster"></label>
+        <label>Preferred Spanish translation <input id="termEs" type="text" placeholder="perito de seguros"></label>
+        <label>Note / definition (optional) <input id="termNote" type="text" placeholder="Insurance professional who assesses the damage"></label>
+        <label>Domain
+          <select id="termDom"><option value="general">General</option><option value="medico">Medical</option><option value="legal">Legal</option><option value="bancario">Banking</option><option value="seguros">Insurance</option></select>
+        </label>
+        <p id="termInfo" class="hint"></p>
+        <div class="row end"><button id="btnSaveTerm" type="button" class="btn primary">Save term</button></div>
+        <h3>Saved terms</h3>
+        <div id="myTermsList" class="mytermslist"></div>
+      </section>
+
+      <div class="row end"><button class="btn ghost" value="cancel" formnovalidate>Close</button></div>
     </form>
   </dialog>
 

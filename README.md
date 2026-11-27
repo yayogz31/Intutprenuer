@@ -31,6 +31,33 @@ Botones **Iniciar**, **Pausar/Reanudar** y **Terminar**. Atajos: `Alt+S`, `Alt+P
 
 Si hay tarjeta de video compatible, Whisper la usa; si es débil, usa el procesador.
 
+## Vocabulary: la app aprende tus palabras
+
+Botón **Vocabulary** (arriba, o en *Terminology*). Todo se guarda solo en tu navegador y se aplica automáticamente:
+
+- **Fix transcription:** si la app oye mal una palabra, enséñale cómo es (*carrot her → character*, *three d → 3D*). Se corrige en las frases nuevas, en la corrección de Whisper y en las frases que ya están en pantalla. Atajo: selecciona la palabra mal escrita en la transcripción y pulsa **Fix** en esa fila.
+- **Translate as:** tus traducciones preferidas (*adjuster → perito de seguros*), aplicadas a la traducción automática en ambos sentidos.
+
+> ¿Se puede "entrenar" el modelo? Reentrenar los modelos de voz dentro del navegador no es viable. En su lugar, la app aprende de tus correcciones (Fix transcription) y de tus traducciones preferidas, que se aplican al instante y para siempre en ese navegador.
+
+## Cuando le hablan al intérprete
+
+Si la frase va dirigida al intérprete, se marca **To interpreter** y aparece primero la respuesta adecuada:
+
+| Lo que dicen | Sugerencia |
+|---|---|
+| "Interpreter, what is your name / ID?" | *My name is {tu nombre}, interpreter ID {tu ID}.* (usa los datos de ⚙) |
+| "Interpreter, are you there? / can you hear me?" | *Yes, the interpreter is on the line.* |
+| "Tell her… / ask him… / dígale… / pregúntele…" | Recordatorio: hablar directamente con la persona, en primera persona |
+| "What did she say?" | *The interpreter will repeat the last rendition.* |
+| "Interpreter, can you explain…?" | No puede explicar ni opinar; interpreta la explicación |
+| "Interpreter, please hold" | *The interpreter will remain on the line.* |
+| "Thank you, interpreter" | Despedida del intérprete |
+
+## Respuesta más rápida
+
+La frase se cierra tras **0.45 s** de silencio (antes 0.7 s). Como los pedazos de una misma oración se unen solos, cerrar antes no corta las oraciones.
+
 ## Columnas: Original → Translation
 
 Por defecto, **la columna izquierda muestra lo que se dijo** (en inglés o en español) y **la derecha su traducción**, sin importar la dirección. La columna de la traducción indica el idioma de destino (EN/ES). Con el selector **EN | ES** del encabezado puedes volver al modo de columnas fijas (inglés a la izquierda, español a la derecha).
