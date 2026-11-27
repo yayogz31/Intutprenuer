@@ -72,10 +72,15 @@ jobs:
           mkdir -p models/bergamot
           python3 - <<'PY'
           import json, urllib.request, gzip, os, hashlib
-          idx = json.load(urllib.request.urlopen("https://bergamot.s3.amazonaws.com/models/index.json"))
+          def get(url):
+              data = urllib.request.urlopen(url).read()
+              return gzip.decompress(data) if data[:2] == b"\x1f\x8b" else data
+          idx = json.loads(get("https://bergamot.s3.amazonaws.com/models/index.json"))
+          print("pares disponibles:", ", ".join(sorted(k for k in idx if k.startswith(("es", "en")))))
           out = {}
           for pair in ("esen", "enes"):
               files = idx[pair]
+              print(pair, json.dumps(files)[:400])
               os.makedirs(f"models/bergamot/{pair}", exist_ok=True)
               out[pair] = {}
               for part, f in files.items():
@@ -84,10 +89,10 @@ jobs:
                   url = f["name"]
                   if not url.startswith("http"):
                       url = "https://bergamot.s3.amazonaws.com/models/" + url
-                  data = urllib.request.urlopen(url).read()
+                  data = get(url)
                   name = os.path.basename(url)
                   if name.endswith(".gz"):
-                      data = gzip.decompress(data); name = name[:-3]
+                      name = name[:-3]
                   path = f"models/bergamot/{pair}/{name}"
                   open(path, "wb").write(data)
                   out[pair][part] = {"name": path, "size": len(data), "expectedSha256Hash": hashlib.sha256(data).hexdigest()}
