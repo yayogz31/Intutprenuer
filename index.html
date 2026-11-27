@@ -14,12 +14,9 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">
+    <div class="brand" title="Interpreter assistant · runs on your device · nothing recorded">
       <span class="logo">◉</span>
-      <div>
-        <h1>Inturpreneur</h1>
-        <small>Interpreter assistant · no AI · nothing recorded</small>
-      </div>
+      <h1>Inturpreneur</h1>
     </div>
 
     <div class="controls">
@@ -31,14 +28,10 @@
         <option value="es-ES">Spanish (ES)</option>
       </select>
       <button id="btnSwap" class="btn ghost" title="Switch language: ES → EN → Auto (Alt+L)">EN ⇄ ES</button>
-      <select id="selEngine" title="Speech recognition engine">
-        <option value="vosk">Local engine (offline)</option>
-        <option value="browser">Browser engine (online)</option>
-      </select>
       <select id="selSource" title="Audio source">
-        <option value="mic">Default microphone</option>
-        <option value="system">Tab / system audio</option>
-        <option value="mix">Microphone + system audio</option>
+        <option value="mic">🎤 Microphone</option>
+        <option value="system">🖥 Tab / system audio</option>
+        <option value="mix">🎤+🖥 Mic + system</option>
       </select>
       <button id="btnStart" class="btn start">▶ Start</button>
       <button id="btnPause" class="btn pause" disabled>❚❚ Pause</button>
@@ -51,7 +44,11 @@
 
   <div id="notice" class="notice" hidden></div>
 
-  <main class="grid">
+  <main id="grid" class="grid t-assist">
+    <div id="sideTabs" class="side-tabs">
+      <button type="button" data-t="assist" class="on">Suggestions &amp; cards</button>
+      <button type="button" data-t="side">Key info &amp; notes<span id="keysDot" class="dot"></span></button>
+    </div>
     <!-- COLUMN 1: transcript -->
     <section class="panel col-transcript">
       <div class="panel-head">
@@ -75,33 +72,44 @@
 
     <!-- COLUMN 2: suggestions + cards -->
     <section class="panel col-assist">
-      <div class="panel-head"><h2>Suggested responses</h2><small>click = copy</small></div>
-      <div id="suggestions" class="suggestions">
-        <p class="empty">Suggestions will appear here based on what is said.</p>
+      <div class="box box-sugg">
+        <div class="panel-head"><h2>Suggested responses</h2><small>click = copy</small></div>
+        <div id="suggestions" class="box-body suggestions">
+          <p class="empty">Suggestions will appear here based on what is said.</p>
+        </div>
       </div>
-
-      <div class="panel-head"><h2>Cards</h2><span><small>click = copy</small> <button id="btnAddCard" class="btn ghost tiny" title="Add your own cards">+ Card</button></span></div>
-      <div id="audience" class="seg" title="Who you are speaking to">
-        <button type="button" data-aud="provider">To Provider · EN</button>
-        <button type="button" data-aud="lep">To LEP · ES</button>
+      <div class="box box-cards">
+        <div class="panel-head"><h2>Cards</h2><span class="head-actions"><small>click = copy</small> <button id="btnAddCard" class="btn ghost tiny" title="Add your own cards">+ Card</button></span></div>
+        <div class="cards-bar">
+          <div id="audience" class="seg" title="Who you are speaking to">
+            <button type="button" data-aud="provider">To Provider · EN</button>
+            <button type="button" data-aud="lep">To LEP · ES</button>
+          </div>
+        </div>
+        <div id="cardTabs" class="tabs"></div>
+        <div id="cards" class="box-body cards"></div>
       </div>
-      <div id="cardTabs" class="tabs"></div>
-      <div id="cards" class="cards"></div>
     </section>
 
-    <!-- COLUMN 3: terminology + notes -->
+    <!-- COLUMN 3: key information + terminology + notes -->
     <section class="panel col-side">
-      <div class="panel-head"><h2>Detected terminology</h2><span id="termCount" class="badge">0</span></div>
-      <div id="terms" class="terms"><p class="empty">Glossary terms will appear here when they are heard.</p></div>
-      <input id="glossSearch" class="search" type="search" placeholder="Search the glossary…">
-      <div id="glossResults" class="terms small"></div>
-
-      <div class="panel-head">
-        <h2>Notes</h2>
-        <button id="btnCopyNotes" class="btn ghost tiny" title="Copy notes to clipboard">Copy</button>
+      <div class="box box-keys">
+        <div class="panel-head"><h2>Key information</h2><span class="head-actions"><span id="keyCount" class="badge">0</span> <button id="btnKeysToNotes" class="btn ghost tiny" title="Add all key information to notes">→ Notes</button></span></div>
+        <div id="keys" class="box-body keys"><p class="empty">Names, numbers, dates, amounts and IDs will appear here, organized by what was asked.</p></div>
       </div>
-      <div id="quickData" class="chips" title="Detected data: click to add to notes"></div>
-      <textarea id="notes" spellcheck="false" autocomplete="off" placeholder="Temporary notes (erased when the call ends)"></textarea>
+      <div class="box box-terms">
+        <div class="panel-head"><h2>Terminology</h2><span id="termCount" class="badge">0</span></div>
+        <input id="glossSearch" class="search" type="search" placeholder="Search the glossary…">
+        <div id="glossResults" class="terms gloss-results"></div>
+        <div id="terms" class="box-body terms"><p class="empty">Glossary terms will appear here when they are heard.</p></div>
+      </div>
+      <div class="box box-notes">
+        <div class="panel-head">
+          <h2>Notes</h2>
+          <button id="btnCopyNotes" class="btn ghost tiny" title="Copy notes to clipboard">Copy</button>
+        </div>
+        <textarea id="notes" spellcheck="false" autocomplete="off" placeholder="Temporary notes (erased when the call ends)"></textarea>
+      </div>
     </section>
   </main>
 
@@ -111,6 +119,13 @@
       <h2>Settings</h2>
       <label>Your name (for cards) <input id="cfgName" type="text"></label>
       <label>Your interpreter ID <input id="cfgId" type="text"></label>
+      <label>Speech engine
+        <select id="selEngine">
+          <option value="vosk">Local engine (offline, recommended)</option>
+          <option value="browser">Browser engine (online, Chrome/Edge only)</option>
+        </select>
+      </label>
+      <label class="row"><input id="cfgMask" type="checkbox"> Hide SSN and card numbers on screen (click 👁 to show)</label>
       <label class="row"><input id="cfgPrecise" type="checkbox"> High-accuracy transcript (Whisper, offline)</label>
       <p class="hint">The fast engine shows text instantly; Whisper re-checks each sentence a moment later and corrects it (marked ✓). First use downloads ~100 MB, then it stays saved.</p>
       <label class="row"><input id="cfgTranslate" type="checkbox"> Live translation (EN ⇄ ES)</label>
@@ -165,6 +180,7 @@
   <script src="data/glosario.js"></script>
   <script src="data/tarjetas.js"></script>
   <script src="data/reglas.js"></script>
+  <script src="keyinfo.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -17,6 +17,29 @@ Botones **Iniciar**, **Pausar/Reanudar** y **Terminar**. Atajos: `Alt+S`, `Alt+P
   - **To Provider:** inglés grande, español abajo (para lo que le dices al proveedor o agente).
   - **To LEP:** español grande, inglés abajo (las mismas tarjetas, dirigidas a la persona LEP).
 
+## Información clave (para tomar notas)
+
+El panel **Key information** organiza automáticamente lo importante que se escucha. No reemplaza al intérprete; le facilita las notas:
+
+- **Qué detecta:** nombre (y letras deletreadas), SSN, número de tarjeta (o últimos 4), CVV, cuenta, routing, teléfono, fecha de nacimiento y fechas, horas, montos, ZIP, póliza, reclamo, miembro, caso, placa, dirección y correo.
+- **Entiende el contexto:** si alguien pregunta *"what's your social security number?"*, los números que se dicten después se guardan como SSN, aunque se dicten en partes ("one two three four five"… "six seven eight nine").
+- **Números y fechas dichos con palabras** en inglés y español: "nine one seven five five five oh one two three" → (917) 555-0123; "doce de marzo de mil novecientos ochenta y cinco" → 12 Mar 1985.
+- **Cuidado con números y fechas:** valida la cantidad de dígitos (SSN 9, teléfono 10, routing 9, tarjeta 15–16, ZIP 5) y las fechas. Si algo no cuadra, el dato se marca en rojo (⚠) y aparece la sugerencia de pedir que lo repitan. Cada dato muestra lo que se escuchó tal cual, para compararlo.
+- **Read back:** para cada dato aparece una sugerencia lista para confirmarlo ("Just to confirm, your social security number is 1 2 3…?").
+- En la transcripción, los datos clave se resaltan en amarillo.
+- Botones por dato: 👁 mostrar (SSN y tarjeta van ocultos en pantalla), ⧉ copiar, ✎ a notas, ✓ confirmado, ✕ descartar. **→ Notes** pasa todo a las notas.
+- Todo vive en memoria y se borra al presionar **End**.
+
+## ¿Por qué depende de la velocidad de mi computadora?
+
+La página se descarga de GitHub Pages, pero **todo el trabajo lo hace tu navegador, en tu computadora**: reconocer la voz (Vosk y Whisper), traducir (Bergamot) y analizar el texto. Nada se envía a un servidor. Por eso:
+
+- **Más núcleos de procesador y un procesador más nuevo** = Whisper corrige las frases más rápido (usa hasta 4 núcleos).
+- **8 GB de RAM o más** recomendados; los modelos ocupan unos 600 MB en memoria.
+- Conecta la laptop a la corriente: el modo ahorro de batería frena el procesador.
+- Chrome o Edge actualizados dan el mejor rendimiento.
+- La transcripción rápida (Vosk) es ligera y funciona bien incluso en equipos modestos.
+
 ## Transcripción a dos columnas
 
 La transcripción muestra **English a la izquierda y Español a la derecha**. Cada frase aparece en su columna y su traducción en la otra, en azul.

@@ -7,7 +7,7 @@
   const $ = (id) => document.getElementById(id);
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const DOMS = ["medico", "legal", "bancario", "seguros"];
-  const DOM_LABEL = { medico: "Medical", legal: "Legal", bancario: "Banking", seguros: "Insurance", duda: "Question", general: "General", aviso: "Disclosure", tarjeta: "Card" };
+  const DOM_LABEL = { medico: "Medical", legal: "Legal", bancario: "Banking", seguros: "Insurance", duda: "Question", general: "General", aviso: "Disclosure", tarjeta: "Card", confirm: "Read back", verify: "Verify" };
   const TAB_FOR_DOM = { medico: "Medical", legal: "Legal", bancario: "Banking", seguros: "Insurance" };
 
   // ───────────────── Utilidades ─────────────────
@@ -49,7 +49,7 @@
   }
 
   // ───────────────── Configuración (solo preferencias, nunca texto de llamadas) ─────────────────
-  const cfg = Object.assign({ name: "", id: "", local: false, lang: "auto", source: "mic", engine: "vosk", translate: true, audience: "provider", precise: true }, store.get("inturp.cfg", {}));
+  const cfg = Object.assign({ name: "", id: "", local: false, lang: "auto", source: "mic", engine: "vosk", translate: true, audience: "provider", precise: true, mask: true }, store.get("inturp.cfg", {}));
   const saveCfg = () => store.set("inturp.cfg", cfg);
 
   // ───────────────── Glosario e índice de términos ─────────────────
@@ -138,21 +138,24 @@
     const doms = max > 0 ? DOMS.filter((d) => score[d] > 0 && score[d] >= max * 0.5) : [];
     const question = QUESTION_RE.test(n.trim());
 
-    // HTML resaltado (sin solapamientos)
-    spans.sort((x, y) => x.a - y.a || y.b - x.b);
+    return { text, n, map, spans, terms, nums, score, doms, question, html: renderHtml(text, map, spans) };
+  }
+  /** HTML resaltado (sin solapamientos; la información clave tiene prioridad). */
+  function renderHtml(text, map, spans) {
+    const pri = { key: 0, term: 1, num: 2 };
+    const sorted = spans.slice().sort((x, y) => x.a - y.a || (pri[x.kind] - pri[y.kind]) || y.b - x.b);
     let html = "", pos = 0, last = -1;
-    for (const s of spans) {
+    for (const s of sorted) {
       if (s.a < last) continue;
       const oa = map[s.a], ob = map[s.b];
       html += esc(text.slice(pos, oa));
       const frag = esc(text.slice(oa, ob));
-      html += s.kind === "term"
-        ? `<mark class="hl-term" title="${esc(`${s.e.t} = ${s.e.tr} · ${s.e.d}`)}">${frag}</mark>`
+      html += s.kind === "term" ? `<mark class="hl-term" title="${esc(`${s.e.t} = ${s.e.tr} · ${s.e.d}`)}">${frag}</mark>`
+        : s.kind === "key" ? `<mark class="hl-key" data-k="${esc(s.label)}" title="${esc(s.label)}">${frag}</mark>`
         : `<mark class="num">${frag}</mark>`;
       pos = ob; last = s.b;
     }
-    html += esc(text.slice(pos));
-    return { n, terms, nums, score, doms, question, html };
+    return html + esc(text.slice(pos));
   }
 
   function suggestionsFor(a) {
@@ -166,9 +169,13 @@
     for (const c of allCards()) {
       if (c._re && (c._re.lastIndex = 0, c._re.test(a.n))) push({ es: fill(c.es), en: fill(c.en), titulo: c.titulo }, c.cat === "Disclosures" ? "aviso" : "tarjeta");
     }
-    if (a.nums.length) {
-      const v = a.nums[a.nums.length - 1];
-      push({ es: `Para confirmar, ¿dijo ${v}?`, en: `Just to confirm, did you say ${v}?` }, "duda");
+    for (const it of (a.keyItems || [])) {
+      if (!it.read || it.type === "number" && !it.check) continue;
+      const v = it.read.includes(": ") ? it.read.split(": ").slice(1).join(": ") : it.read;
+      const vEs = it.readEs ? it.readEs : null;
+      push({ en: `Just to confirm, your ${it.read.includes(": ") ? it.read.replace(": ", " is ") : "information is " + v}?`,
+             es: vEs ? `Para confirmar, su ${vEs.replace(": ", " es ")}, ¿correcto?` : `Para confirmar: ${v}, ¿correcto?`, titulo: "Read back" }, it.check ? "verify" : "confirm");
+      if (it.check && /digits/.test(it.note || "")) push({ en: "Could you please repeat the number slowly, digit by digit?", es: "¿Podría repetir el número despacio, dígito por dígito?" }, "verify");
     }
     if (a.question && !out.some((s) => s.dom === "duda"))
       push({ es: "Buena pregunta, permítame verificarlo.", en: "Good question, let me check that for you." }, "duda");
@@ -176,8 +183,9 @@
       const lead = leadDomain();
       for (const s of (window.SUGERENCIAS_DEFECTO || {})[lead || "general"] || []) push(s, lead || "general");
     }
-    // los avisos (disclosures) siempre primero
-    out.sort((x, y) => (y.dom === "aviso") - (x.dom === "aviso"));
+    // primero: verificar datos, luego avisos (disclosures)
+    const rank = (d) => (d === "verify" ? 3 : d === "aviso" ? 2 : d === "confirm" ? 1 : 0);
+    out.sort((x, y) => rank(y.dom) - rank(x.dom));
     return out.slice(0, 7);
   }
 
@@ -186,8 +194,8 @@
   const freshSession = () => ({
     acc: { medico: 0, legal: 0, bancario: 0, seguros: 0 },
     termsSeen: new Map(),   // entrada → contador
+    keys: [], keySeq: 0, rowSeq: 0, expect: null,   // información clave (solo memoria)
     liveTerms: new Set(),   // términos ya contados en la frase en curso
-    nums: new Set(),
     count: 0,
   });
   const leadDomain = () => {
@@ -231,9 +239,64 @@
     $("termCount").textContent = arr.length;
     $("terms").innerHTML = arr.length ? arr.map(([e, v]) => termHTML(e, v.n)).join("") : `<p class="empty">Glossary terms will appear here when they are heard.</p>`;
   }
-  function renderChips() {
-    $("quickData").innerHTML = [...session.nums].slice(-12).map((v) => `<button type="button" data-v="${esc(v)}">${esc(v)}</button>`).join("");
+  // ───────────────── Información clave ─────────────────
+  const KEY_ICON = { name: "👤", ssn: "🆔", card: "💳", cvv: "💳", account: "🏦", routing: "🏦", phone: "📞", zip: "📍", address: "📍",
+    email: "✉️", dob: "🎂", date: "📅", time: "🕒", amount: "💵", policy: "📄", claim: "📄", member: "🪪", case: "📄", plate: "🚗", number: "#", spelled: "🔤" };
+  /** Guarda los datos de una frase: si llega el resto de un número dictado en partes, actualiza el mismo dato. */
+  function storeKeys(items, rowId) {
+    const now = Date.now();
+    for (const it of items) {
+      const prev = session.keys.find((k) => k.type === it.type && k.digits && it.digits && it.digits.startsWith(k.digits) && it.digits !== k.digits && now - k.t < 30000)
+        || session.keys.find((k) => k.type === it.type && k.value === it.value);
+      if (prev) { Object.assign(prev, it, { id: prev.id, t: now, rows: [...new Set([...(prev.rows || []), rowId])] }); continue; }
+      session.keys.push({ ...it, id: ++session.keySeq, t: now, rows: [rowId], time: fmtTime(elapsed()) });
+    }
   }
+  function keyValueShown(k) { return cfg.mask && k.sensitive && !k.revealed ? KeyInfo.mask(k.type, k.value) : k.value; }
+  function keyLine(k) { return `${k.label}: ${k.value}`; }
+  let seenKeys = 0;
+  function renderKeys() {
+    const box = $("keys");
+    const list = session ? session.keys.filter((k) => !k.hidden) : [];
+    $("keyCount").textContent = list.length;
+    // en pantallas medianas, aviso en la pestaña cuando hay datos nuevos sin ver
+    const hiddenSide = $("grid").classList.contains("t-assist") && getComputedStyle($("sideTabs")).display !== "none";
+    if (!hiddenSide) seenKeys = list.length;
+    $("keysDot").textContent = hiddenSide && list.length > seenKeys ? String(list.length - seenKeys) : "";
+    if (!list.length) { box.innerHTML = `<p class="empty">Names, numbers, dates, amounts and IDs will appear here, organized by what was asked.</p>`; return; }
+    // los datos con contexto (SSN, teléfono…) primero; números sueltos al final
+    const order = (k) => (k.type === "number" ? 1 : 0);
+    box.innerHTML = list.slice().sort((x, y) => order(x) - order(y) || y.t - x.t).map((k) => `
+      <div class="key ${k.check ? "check" : ""} ${k.confirmed ? "ok" : ""} ${k.type}" data-id="${k.id}">
+        <div class="key-top">
+          <span class="key-label">${KEY_ICON[k.type] || "•"} ${esc(k.label)}</span>
+          <span class="key-acts">
+            ${k.sensitive && cfg.mask ? `<button type="button" data-act="reveal" title="Show / hide">👁</button>` : ""}
+            <button type="button" data-act="copy" title="Copy">⧉</button>
+            <button type="button" data-act="note" title="Add to notes">✎</button>
+            <button type="button" data-act="ok" title="Mark as confirmed">✓</button>
+            <button type="button" data-act="del" title="Discard">✕</button>
+          </span>
+        </div>
+        <div class="key-val">${esc(keyValueShown(k))}${k.alt ? ` <small>${esc(k.alt)}</small>` : ""}</div>
+        ${k.note ? `<div class="key-note">${k.check ? "⚠ " : ""}${esc(k.note)}</div>` : ""}
+        <div class="key-heard" title="What was heard">${k.time} · “${esc(k.raw || "")}”</div>
+      </div>`).join("");
+  }
+  function addToNotes(line) {
+    const n = $("notes");
+    n.value += (n.value && !n.value.endsWith("\n") ? "\n" : "") + line + "\n";
+    n.scrollTop = n.scrollHeight;
+  }
+  /** Extrae la información clave de una frase final y la integra (resaltado + panel + sugerencias). */
+  function extractKeys(a, rowId, ctxExpect) {
+    if (!window.KeyInfo) return [];
+    const r = KeyInfo.extract(a.text, a.n, { expect: ctxExpect, now: Date.now(), map: a.map });
+    a.keyItems = r.items;
+    if (r.spans.length) a.html = renderHtml(a.text, a.map, a.spans.concat(r.spans.map((x) => ({ ...x, kind: "key" }))));
+    return r;
+  }
+
 
   // ───────────────── Traducción (todo en el dispositivo, sin internet ni API keys) ─────────────────
   // 1) Traductor integrado de Chrome 138+ (el más rápido).  2) Respaldo en cualquier navegador: Bergamot
@@ -322,7 +385,8 @@
     if (!session || !job.row.isConnected) return;
     const wOld = words(job.text), wNew = words(text);
     if (wNew.join(" ") === wOld.join(" ")) return;
-    if (wNew.length > wOld.length * 2.5 + 4 || wNew.length < Math.ceil(wOld.length * 0.3)) return; // descarta alucinaciones
+    // descarta alucinaciones (mucho texto de más) o cortes (dejó fuera buena parte de lo dicho)
+    if (wNew.length > wOld.length * 2 + 4 || wNew.length < Math.floor(wOld.length * 0.6)) return;
     const a = analyze(text);
     const now = Date.now();
     for (const e of a.terms) if (!job.terms.has(e)) {
@@ -330,6 +394,13 @@
       const v = session.termsSeen.get(e) || { n: 0, t: 0 }; v.n++; v.t = now; session.termsSeen.set(e, v);
     }
     job.text = text;
+    // vuelve a extraer los datos de esta fila con el texto corregido
+    const rid = +job.row.dataset.rid;
+    const kr = extractKeys(a, rid, job.row._ctx);
+    if (kr.items && kr.items.length) {
+      session.keys = session.keys.filter((k) => !(k.rows && k.rows.length === 1 && k.rows[0] === rid && !k.confirmed));
+      storeKeys(kr.items, rid); renderKeys();
+    }
     const orig = job.row.querySelector(".cell.orig");
     orig.innerHTML = a.html; orig.classList.add("refined");
     orig.title = "Corrected by the high-accuracy engine";
@@ -344,6 +415,7 @@
     if (!cfg.translate) { cell.textContent = ""; return; }
     cell.classList.add("pending");
     const seq = (row._trSeq = (row._trSeq || 0) + 1);
+    setTimeout(() => { if (seq === row._trSeq) cell.classList.remove("pending"); }, 10000);
     translate(text, lang).then((t) => {
       if (seq !== row._trSeq || !row.isConnected) return;
       cell.classList.remove("pending");
@@ -368,11 +440,16 @@
       v.t = now; session.termsSeen.set(e, v);
     }
     session.liveTerms.clear();
-    for (const v of a.nums) { session.nums.delete(v); session.nums.add(v); }
+    const rowId = ++session.rowSeq;
+    const ctxExpect = session.expect;
+    const kr = extractKeys(a, rowId, ctxExpect);
+    session.expect = kr.expect || null;
+    storeKeys(kr.items || [], rowId);
 
     const tr = $("transcript");
     if (session.count === 1) tr.innerHTML = "";
     const row = document.createElement("div");
+    row.dataset.rid = rowId; row._ctx = ctxExpect;
     const tags = [...a.doms, ...(a.question ? ["duda"] : [])];
     row.className = "trow " + (a.doms[0] || "");
     const origCell = `<div class="cell orig" lang="${lang}">${a.html}</div>`;
@@ -394,7 +471,7 @@
     }
 
     renderSuggestions(suggestionsFor(a));
-    renderMeter(); renderTerms(); renderChips();
+    renderMeter(); renderTerms(); renderKeys();
   }
 
   function clearInterim() {
@@ -596,7 +673,7 @@
 
   // Cierre de frase rápido: si hay 0.55 s de silencio (o el texto parcial no cambia en 1.1 s) se cierra la frase,
   // en lugar de esperar los 1–2 s que usa el modelo por defecto.
-  const SILENCE_MS = 800, STABLE_MS = 1500;
+  const SILENCE_MS = 700, STABLE_MS = 1400;
   let lastLang = "es";
 
   async function startVosk() {
@@ -614,6 +691,7 @@
     clearTimeout(slow);
     if (gen !== voskGen || state !== "running") return;
     notice("");
+    setTimeout(getAi, 1500);  // Whisper carga cuando Vosk ya está escuchando (arranque más rápido)
     if (!audioCtx) audioCtx = makeCtx();
     let src;
     try { src = audioCtx.createMediaStreamSource(new MediaStream([track])); }
@@ -629,8 +707,9 @@
     const v = { recs: [], partial: {}, partialAt: 0, partialText: "", seg: null, speaking: false, silentSince: 0, floor: 0.004, chunks: [], samples: 0 };
     // audio de la frase en curso (para que Whisper la vuelva a transcribir con más precisión)
     const takeAudio = () => {
-      const chunks = v.chunks; v.chunks = []; const n = v.samples; v.samples = 0;
-      if (!cfg.precise || !aiReady || n < rate * 0.5) return null;
+      const chunks = v.chunks, overflow = v.overflow; v.chunks = []; const n = v.samples; v.samples = 0; v.overflow = false;
+      // sin Whisper listo, frase muy corta, o frase más larga que la ventana de Whisper → no se corrige
+      if (!cfg.precise || !aiReady || overflow || n < rate * 0.5) return null;
       const all = new Float32Array(n); let o = 0; for (const c of chunks) { all.set(c, o); o += c.length; }
       return resampleTo16k(all, rate);
     };
@@ -689,9 +768,10 @@
       if (state !== "running" || gen !== voskGen) return;
       const data = e.inputBuffer.getChannelData(0);
       for (const r of v.recs) { try { r.acceptWaveformFloat(data, rate); } catch { /* */ } }
-      if (cfg.precise && aiReady && (v.speaking || v.partialText || v.samples)) {
+      // se guarda el audio de la frase en curso desde el inicio (aunque Whisper siga cargando)
+      if (cfg.precise && !aiFailed && (v.speaking || v.partialText || v.samples)) {
         v.chunks.push(data.slice()); v.samples += data.length;
-        while (v.samples > rate * 28) v.samples -= v.chunks.shift().length;  // Whisper procesa hasta 30 s
+        while (v.samples > rate * 28) { v.samples -= v.chunks.shift().length; v.overflow = true; }  // Whisper procesa hasta 30 s
       }
       // detector de voz por energía con piso de ruido adaptativo
       let sum = 0; for (let i = 0; i < data.length; i += 4) sum += data[i] * data[i];
@@ -806,7 +886,7 @@
   async function start() {
     if (state !== "idle") return;
     prepareTranslators();   // dentro del clic: el navegador puede necesitar descargar el traductor
-    getAi();                // carga el modelo preciso en segundo plano (la 1.ª vez lo descarga)
+    if (cfg.engine === "browser") setTimeout(getAi, 3000);  // el modelo preciso carga después, para no frenar el arranque
     if (cfg.engine === "browser" && (!SR || cfg.lang === "auto")) { cfg.engine = "vosk"; $("selEngine").value = "vosk"; saveCfg(); }
     if (cfg.engine === "vosk" && (!window.WebAssembly || !window.AudioContext)) { notice("This browser does not support the local engine. Use an up-to-date Chrome, Edge, Firefox or Safari.", true); return; }
     notice("");
@@ -870,7 +950,7 @@
     $("suggestions").innerHTML = `<p class="empty">Suggestions will appear here based on what is said.</p>`;
     $("terms").innerHTML = `<p class="empty">Glossary terms will appear here when they are heard.</p>`;
     $("termCount").textContent = "0";
-    $("quickData").innerHTML = "";
+    renderKeys(); seenKeys = 0; $("keysDot").textContent = "";
     $("notes").value = "";
     $("simInput").value = "";
     $("timer").textContent = "00:00";
@@ -978,10 +1058,30 @@
       if (del) { if (confirm("Delete this card?")) { customCards.splice(+del.dataset.del, 1); saveCustomCards(); } return; }
       const el = e.target.closest("[data-copy]") || e.target.closest(".card")?.querySelector(".pri"); if (el) copy(el.dataset.copy);
     };
-    $("quickData").onclick = (e) => {
+    $("sideTabs").onclick = (e) => {
       const b = e.target.closest("button"); if (!b) return;
-      const n = $("notes"); n.value += (n.value && !n.value.endsWith("\n") ? "\n" : "") + b.dataset.v + " "; n.focus();
+      const g = $("grid"); g.classList.toggle("t-assist", b.dataset.t === "assist"); g.classList.toggle("t-side", b.dataset.t === "side");
+      for (const x of $("sideTabs").children) x.classList.toggle("on", x === b);
+      if (b.dataset.t === "side") { seenKeys = session ? session.keys.length : 0; $("keysDot").textContent = ""; }
     };
+    $("keys").onclick = (e) => {
+      const btn = e.target.closest("button[data-act]"); if (!btn || !session) return;
+      const k = session.keys.find((x) => x.id === +btn.closest(".key").dataset.id); if (!k) return;
+      const act = btn.dataset.act;
+      if (act === "copy") copy(k.value);
+      else if (act === "note") { addToNotes(keyLine(k)); toast("Added to notes"); }
+      else if (act === "reveal") { k.revealed = !k.revealed; renderKeys(); }
+      else if (act === "ok") { k.check = false; k.confirmed = true; k.note = "Confirmed"; renderKeys(); }
+      else if (act === "del") { k.hidden = true; renderKeys(); }
+    };
+    $("btnKeysToNotes").onclick = () => {
+      if (!session) return;
+      const list = session.keys.filter((k) => !k.hidden && k.type !== "number");
+      if (!list.length) return;
+      addToNotes(list.map(keyLine).join("\n")); toast("Key information added to notes");
+    };
+    $("cfgMask").checked = cfg.mask;
+    $("cfgMask").onchange = (e) => { cfg.mask = e.target.checked; saveCfg(); if (session) renderKeys(); };
     $("btnCopyNotes").onclick = () => $("notes").value.trim() && copy($("notes").value);
 
     $("simForm").onsubmit = (e) => {

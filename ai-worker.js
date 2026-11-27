@@ -60,6 +60,8 @@ async function run(job) {
     max_new_tokens: Math.min(220, Math.ceil(secs * 7) + 12),
   });
   let text = (out && out.text ? out.text : "").replace(/\s+/g, " ").trim();
+  // "otro, otro, otro" → "otro" (palabras repetidas sin sentido)
+  text = text.replace(/\b([\p{L}']+)(?:[,.\s]+\1\b){2,}/giu, "$1");
   if (HALLUCINATIONS.test(text) || isRepetitive(text)) text = "";
   self.postMessage({ type: "asr", id: job.id, text, ms: Math.round(performance.now() - t0) });
 }
