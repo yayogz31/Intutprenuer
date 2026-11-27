@@ -341,7 +341,7 @@
         return;
       }
       // número suelto (sin contexto)
-      if (g.digits.length >= 2 || g.value >= 10) {
+      if (g.digits.length >= 3) {
         add({ type: "number", label: "Number", value: g.value !== null && g.chunks.length === 1 && g.chunks[0].digits === undefined ? g.value.toLocaleString("en-US") : (g.chunks.length === 1 ? g.digits : spaced(g.digits)), raw: g.raw, a: g.a, b: g.b, check: false, read: spaced(g.digits) });
       }
     });

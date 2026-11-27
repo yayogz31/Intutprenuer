@@ -16,24 +16,55 @@ env.backends.onnx.wasm.proxy = false;
 env.backends.onnx.wasm.numThreads = self.crossOriginIsolated ? Math.max(1, Math.min(4, ((navigator.hardwareConcurrency || 2) / 2) | 0)) : 1;
 
 const MODEL = "onnx-community/whisper-base";
-let asrPromise = null;
+let asrPromise = null, mode = "cpu", forceCpu = false;
 const queue = [];
 let busy = false;
+
+/** Si la computadora tiene GPU compatible (WebGPU), el codificador de Whisper (la parte pesada) corre ahí:
+ *  suele ser 3–10 veces más rápido. El decodificador sigue en el procesador. Si algo falla, se usa solo el procesador. */
+async function gpuConfig() {
+  try {
+    if (forceCpu || !self.navigator || !navigator.gpu) return null;
+    const ad = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+    if (!ad) return null;
+    // los adaptadores "de software" (sin tarjeta de video real) son mucho más lentos que el procesador
+    if (ad.isFallbackAdapter || (ad.info && ad.info.isFallbackAdapter) || /swiftshader|llvmpipe|software|basic render/i.test(((ad.info && (ad.info.description + " " + ad.info.architecture + " " + ad.info.vendor)) || ""))) return null;
+    const f16 = ad.features.has("shader-f16");
+    const file = f16 ? "encoder_model_fp16.onnx" : "encoder_model.onnx";
+    const r = await fetch(env.localModelPath + MODEL + "/onnx/" + file, { method: "HEAD" });
+    if (!r.ok) return null;
+    return { device: { encoder_model: "webgpu", decoder_model_merged: "wasm" }, dtype: { encoder_model: f16 ? "fp16" : "fp32", decoder_model_merged: "q8" }, mode: f16 ? "gpu-fp16" : "gpu" };
+  } catch { return null; }
+}
 
 function getAsr() {
   if (!asrPromise) {
     const files = {};
-    asrPromise = pipeline("automatic-speech-recognition", MODEL, {
-      device: "wasm",
-      dtype: { encoder_model: "q8", decoder_model_merged: "q8" },
-      progress_callback: (p) => {
-        if (p.status === "progress" && p.total) {
-          files[p.file] = [p.loaded, p.total];
-          let l = 0, t = 0; for (const [a, b] of Object.values(files)) { l += a; t += b; }
-          self.postMessage({ type: "progress", pct: Math.round((l / t) * 100), mb: Math.round(t / 1e6) });
-        }
-      },
-    }).catch((e) => { asrPromise = null; throw e; });
+    const progress_callback = (p) => {
+      if (p.status === "progress" && p.total) {
+        files[p.file] = [p.loaded, p.total];
+        let l = 0, t = 0; for (const [a, b] of Object.values(files)) { l += a; t += b; }
+        self.postMessage({ type: "progress", pct: Math.round((l / t) * 100), mb: Math.round(t / 1e6) });
+      }
+    };
+    asrPromise = (async () => {
+      const gpu = await gpuConfig();
+      if (gpu) {
+        let p = null;
+        try {
+          p = await pipeline("automatic-speech-recognition", MODEL, { device: gpu.device, dtype: gpu.dtype, progress_callback });
+          const probe = { language: "english", task: "transcribe", max_new_tokens: 4 };
+          await p(new Float32Array(16000), probe);            // 1.ª vez: compila
+          const t0 = performance.now();
+          await p(new Float32Array(16000), probe);            // 2.ª vez: mide la velocidad real
+          if (performance.now() - t0 > 1500) throw new Error("GPU slower than expected");  // GPU débil → procesador
+          mode = gpu.mode;
+          return p;
+        } catch (e) { forceCpu = true; try { if (p && p.dispose) await p.dispose(); } catch { /* */ } }
+      }
+      mode = "cpu";
+      return pipeline("automatic-speech-recognition", MODEL, { device: "wasm", dtype: { encoder_model: "q8", decoder_model_merged: "q8" }, progress_callback });
+    })().catch((e) => { asrPromise = null; throw e; });
   }
   return asrPromise;
 }
@@ -50,7 +81,7 @@ function isRepetitive(text) {
   return Math.max(...seen.values()) >= 4;
 }
 
-async function run(job) {
+async function run(job, retry) {
   const asr = await getAsr();
   const t0 = performance.now();
   const secs = job.audio.length / 16000;
@@ -63,7 +94,7 @@ async function run(job) {
   // "otro, otro, otro" → "otro" (palabras repetidas sin sentido)
   text = text.replace(/\b([\p{L}']+)(?:[,.\s]+\1\b){2,}/giu, "$1");
   if (HALLUCINATIONS.test(text) || isRepetitive(text)) text = "";
-  self.postMessage({ type: "asr", id: job.id, text, ms: Math.round(performance.now() - t0) });
+  self.postMessage({ type: "asr", id: job.id, text, ms: Math.round(performance.now() - t0), mode });
 }
 
 async function pump() {
@@ -73,8 +104,13 @@ async function pump() {
     // si se acumulan frases, se procesan las más recientes primero y se descartan las muy viejas
     while (queue.length > 3) { const old = queue.shift(); self.postMessage({ type: "asr", id: old.id, text: "", skipped: true }); }
     const job = queue.shift();
+    // con trabajo pendiente, las frases que el motor rápido ya entendió con mucha seguridad se saltan
+    if (queue.length && job.conf >= 0.9) { self.postMessage({ type: "asr", id: job.id, text: "", skipped: true }); continue; }
     try { await run(job); }
-    catch (e) { self.postMessage({ type: "error", id: job.id, error: String((e && e.message) || e) }); }
+    catch (e) {
+      if (mode !== "cpu") { forceCpu = true; asrPromise = null; try { await run(job); continue; } catch { /* */ } }
+      self.postMessage({ type: "error", id: job.id, error: String((e && e.message) || e) });
+    }
   }
   busy = false;
 }
@@ -82,7 +118,7 @@ async function pump() {
 self.onmessage = (e) => {
   const m = e.data || {};
   if (m.type === "load") {
-    getAsr().then(() => self.postMessage({ type: "ready" }), (err) => self.postMessage({ type: "error", error: String((err && err.message) || err) }));
+    getAsr().then(() => self.postMessage({ type: "ready", mode }), (err) => self.postMessage({ type: "error", error: String((err && err.message) || err) }));
   } else if (m.type === "asr") {
     queue.push(m);
     pump();

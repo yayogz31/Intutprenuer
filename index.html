@@ -15,30 +15,36 @@
 <body>
   <header class="topbar">
     <div class="brand" title="Interpreter assistant · runs on your device · nothing recorded">
-      <span class="logo">◉</span>
+      <span class="logo" aria-hidden="true"></span>
       <h1>Inturpreneur</h1>
     </div>
 
     <div class="controls">
-      <select id="selLang" title="Language being spoken">
-        <option value="auto">Auto (EN + ES)</option>
-        <option value="en-US">English (US)</option>
-        <option value="es-MX">Spanish (MX)</option>
-        <option value="es-US">Spanish (US)</option>
-        <option value="es-ES">Spanish (ES)</option>
-      </select>
-      <button id="btnSwap" class="btn ghost" title="Switch language: ES → EN → Auto (Alt+L)">EN ⇄ ES</button>
-      <select id="selSource" title="Audio source">
-        <option value="mic">🎤 Microphone</option>
-        <option value="system">🖥 Tab / system audio</option>
-        <option value="mix">🎤+🖥 Mic + system</option>
-      </select>
-      <button id="btnStart" class="btn start">▶ Start</button>
-      <button id="btnPause" class="btn pause" disabled>❚❚ Pause</button>
-      <button id="btnStop" class="btn stop" disabled>■ End</button>
-      <span id="status" class="status idle">Idle</span>
-      <span id="timer" class="timer">00:00</span>
-      <button id="btnSettings" class="btn ghost" title="Settings">⚙</button>
+      <div class="ctl-group">
+        <select id="selLang" title="Language being spoken">
+          <option value="auto">Auto (EN + ES)</option>
+          <option value="en-US">English (US)</option>
+          <option value="es-MX">Spanish (MX)</option>
+          <option value="es-US">Spanish (US)</option>
+          <option value="es-ES">Spanish (ES)</option>
+        </select>
+        <button id="btnSwap" class="btn ghost icon" title="Switch language: ES → EN → Auto (Alt+L)">⇄</button>
+        <select id="selSource" title="Audio source">
+          <option value="mic">🎤 Microphone</option>
+          <option value="system">🖥 Tab / system audio</option>
+          <option value="mix">🎤+🖥 Mic + system</option>
+        </select>
+      </div>
+      <div class="ctl-group">
+        <button id="btnStart" class="btn start">▶ Start</button>
+        <button id="btnPause" class="btn pause" disabled>❚❚ Pause</button>
+        <button id="btnStop" class="btn stop" disabled>■ End</button>
+      </div>
+      <div class="ctl-group">
+        <span id="status" class="status idle">Idle</span>
+        <span id="timer" class="timer">00:00</span>
+        <button id="btnSettings" class="btn ghost icon" title="Settings">⚙</button>
+      </div>
     </div>
   </header>
 
@@ -49,66 +55,92 @@
       <button type="button" data-t="assist" class="on">Suggestions &amp; cards</button>
       <button type="button" data-t="side">Key info &amp; notes<span id="keysDot" class="dot"></span></button>
     </div>
+
     <!-- COLUMN 1: transcript -->
     <section class="panel col-transcript">
       <div class="panel-head">
-        <h2>Live transcript</h2>
-        <div id="domainMeter" class="meter">
-          <span data-dom="medico">Medical <b>0%</b></span>
-          <span data-dom="legal">Legal <b>0%</b></span>
-          <span data-dom="bancario">Banking <b>0%</b></span>
-          <span data-dom="seguros">Insurance <b>0%</b></span>
+        <h2><span class="h-ico">💬</span>Live transcript</h2>
+        <div class="head-actions">
+          <div id="domainMeter" class="meter">
+            <span data-dom="medico" hidden>Medical <b>0%</b></span>
+            <span data-dom="legal" hidden>Legal <b>0%</b></span>
+            <span data-dom="bancario" hidden>Banking <b>0%</b></span>
+            <span data-dom="seguros" hidden>Insurance <b>0%</b></span>
+          </div>
+          <div class="font-ctl" title="Text size">
+            <button id="btnFontDown" type="button" aria-label="Smaller text">A−</button>
+            <button id="btnFontUp" type="button" aria-label="Larger text">A+</button>
+          </div>
         </div>
       </div>
-      <div class="cols-head"><span>English</span><span>Español</span></div>
-      <div id="transcript" class="transcript" aria-live="polite">
-        <p class="empty">Press <b>Start</b> to begin. Nothing is saved: everything is erased when the call ends.</p>
+      <div class="cols-head"><span>🇺🇸 English</span><span>🇲🇽 Español</span></div>
+      <div class="transcript-wrap">
+        <div id="transcript" class="transcript" aria-live="polite">
+          <p class="empty">Press <b>Start</b> to begin. Nothing is saved: everything is erased when the call ends.</p>
+        </div>
+        <button id="jumpLive" class="jump-live" type="button" hidden>↓ Live</button>
       </div>
       <div id="interim" class="trow interim"><div class="cell" data-l="en"></div><div class="cell" data-l="es"></div></div>
+      <div id="ctxStrip" class="ctx-strip" title="Key information and terms from the conversation — click to copy"></div>
       <form id="simForm" class="simform" autocomplete="off">
-        <input id="simInput" type="text" placeholder="Test without audio: type a sentence and press Enter (e.g. “I don't recognize a $250 charge”)">
+        <input id="simInput" type="text" placeholder="⌨  Test without audio: type a sentence and press Enter">
       </form>
     </section>
 
     <!-- COLUMN 2: suggestions + cards -->
     <section class="panel col-assist">
-      <div class="box box-sugg">
-        <div class="panel-head"><h2>Suggested responses</h2><small>click = copy</small></div>
+      <div class="box box-sugg" data-box="sugg">
+        <div class="panel-head box-head">
+          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev">▾</span><h2><span class="h-ico">💡</span>Suggested responses</h2></button>
+          <small>click = copy</small>
+        </div>
         <div id="suggestions" class="box-body suggestions">
           <p class="empty">Suggestions will appear here based on what is said.</p>
         </div>
       </div>
-      <div class="box box-cards">
-        <div class="panel-head"><h2>Cards</h2><span class="head-actions"><small>click = copy</small> <button id="btnAddCard" class="btn ghost tiny" title="Add your own cards">+ Card</button></span></div>
-        <div class="cards-bar">
-          <div id="audience" class="seg" title="Who you are speaking to">
-            <button type="button" data-aud="provider">To Provider · EN</button>
-            <button type="button" data-aud="lep">To LEP · ES</button>
-          </div>
+      <div class="box box-cards" data-box="cards">
+        <div class="panel-head box-head">
+          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev">▾</span><h2><span class="h-ico">🗂</span>Cards</h2></button>
+          <span class="head-actions">
+            <div id="audience" class="seg" title="Who you are speaking to">
+              <button type="button" data-aud="provider">Provider · EN</button>
+              <button type="button" data-aud="lep">LEP · ES</button>
+            </div>
+            <button id="btnAddCard" class="btn ghost tiny" title="Add your own cards">＋</button>
+          </span>
         </div>
-        <div id="cardTabs" class="tabs"></div>
+        <div class="box-tools">
+          <div id="cardTabs" class="tabs"></div>
+          <input id="cardFilter" class="search slim" type="search" placeholder="Filter cards…">
+        </div>
         <div id="cards" class="box-body cards"></div>
       </div>
     </section>
 
     <!-- COLUMN 3: key information + terminology + notes -->
     <section class="panel col-side">
-      <div class="box box-keys">
-        <div class="panel-head"><h2>Key information</h2><span class="head-actions"><span id="keyCount" class="badge">0</span> <button id="btnKeysToNotes" class="btn ghost tiny" title="Add all key information to notes">→ Notes</button></span></div>
+      <div class="box box-keys" data-box="keys">
+        <div class="panel-head box-head">
+          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev">▾</span><h2><span class="h-ico">🔑</span>Key information</h2></button>
+          <span class="head-actions"><span id="keyCount" class="badge">0</span> <button id="btnKeysToNotes" class="btn ghost tiny" title="Add all key information to notes">→ Notes</button></span>
+        </div>
         <div id="keys" class="box-body keys"><p class="empty">Names, numbers, dates, amounts and IDs will appear here, organized by what was asked.</p></div>
       </div>
-      <div class="box box-terms">
-        <div class="panel-head"><h2>Terminology</h2><span id="termCount" class="badge">0</span></div>
-        <input id="glossSearch" class="search" type="search" placeholder="Search the glossary…">
+      <div class="box box-terms" data-box="terms">
+        <div class="panel-head box-head">
+          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev">▾</span><h2><span class="h-ico">📖</span>Terminology</h2></button>
+          <span id="termCount" class="badge">0</span>
+        </div>
+        <div class="box-tools"><input id="glossSearch" class="search slim" type="search" placeholder="Search the glossary…"></div>
         <div id="glossResults" class="terms gloss-results"></div>
         <div id="terms" class="box-body terms"><p class="empty">Glossary terms will appear here when they are heard.</p></div>
       </div>
-      <div class="box box-notes">
-        <div class="panel-head">
-          <h2>Notes</h2>
+      <div class="box box-notes" data-box="notes">
+        <div class="panel-head box-head">
+          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev">▾</span><h2><span class="h-ico">📝</span>Notes</h2></button>
           <button id="btnCopyNotes" class="btn ghost tiny" title="Copy notes to clipboard">Copy</button>
         </div>
-        <textarea id="notes" spellcheck="false" autocomplete="off" placeholder="Temporary notes (erased when the call ends)"></textarea>
+        <textarea id="notes" class="box-body" spellcheck="false" autocomplete="off" placeholder="Temporary notes (erased when the call ends)"></textarea>
       </div>
     </section>
   </main>

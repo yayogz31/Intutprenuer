@@ -17,6 +17,16 @@ Botones **Iniciar**, **Pausar/Reanudar** y **Terminar**. Atajos: `Alt+S`, `Alt+P
   - **To Provider:** inglés grande, español abajo (para lo que le dices al proveedor o agente).
   - **To LEP:** español grande, inglés abajo (las mismas tarjetas, dirigidas a la persona LEP).
 
+## Uso rápido
+
+- **Transcripción estable:** si subes a leer, la transcripción no se mueve aunque sigan llegando frases o se corrijan otras. El botón **↓ Live** (o "↓ 5 new") te regresa al final.
+- **Franja de contexto:** justo debajo de la línea en vivo aparecen los datos clave y términos más recientes, como subtítulos. Clic para copiar.
+- **A− / A+:** tamaño de letra de la transcripción.
+- **Secciones plegables:** clic en el título de cualquier sección (▾) para cerrarla o abrirla; el espacio libre se reparte entre las demás. La app recuerda cuáles cerraste.
+- **Tarjetas:** categorías en una línea, con el número de tarjetas, y **Filter cards…** para buscar en todas.
+- **¿Idioma equivocado?** Clic en la etiqueta **EN/ES** de una frase: se mueve de columna, se vuelve a traducir y Whisper la re-transcribe en el idioma correcto.
+- **Corrección más rápida:** si tu computadora tiene una tarjeta de video compatible (WebGPU), Whisper la usa automáticamente (suele ser varias veces más rápido). Si no, o si la GPU resulta lenta, usa el procesador. Con mucho trabajo pendiente, se salta las frases que el motor rápido ya entendió con seguridad.
+
 ## Información clave (para tomar notas)
 
 El panel **Key information** organiza automáticamente lo importante que se escucha. No reemplaza al intérprete; le facilita las notas:

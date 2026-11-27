@@ -49,7 +49,7 @@
   }
 
   // ───────────────── Configuración (solo preferencias, nunca texto de llamadas) ─────────────────
-  const cfg = Object.assign({ name: "", id: "", local: false, lang: "auto", source: "mic", engine: "vosk", translate: true, audience: "provider", precise: true, mask: true }, store.get("inturp.cfg", {}));
+  const cfg = Object.assign({ name: "", id: "", local: false, lang: "auto", source: "mic", engine: "vosk", translate: true, audience: "provider", precise: true, mask: true, fontSize: 15, collapsed: {} }, store.get("inturp.cfg", {}));
   const saveCfg = () => store.set("inturp.cfg", cfg);
 
   // ───────────────── Glosario e índice de términos ─────────────────
@@ -194,6 +194,7 @@
   const freshSession = () => ({
     acc: { medico: 0, legal: 0, bancario: 0, seguros: 0 },
     termsSeen: new Map(),   // entrada → contador
+    recent: [],             // últimas frases (contexto para sugerencias)
     keys: [], keySeq: 0, rowSeq: 0, expect: null,   // información clave (solo memoria)
     liveTerms: new Set(),   // términos ya contados en la frase en curso
     count: 0,
@@ -212,7 +213,7 @@
     if (!list.length) return;
     const [p1, p2] = primaryOrder();
     box.innerHTML = list.map((s) => `
-      <div class="sugg" data-${p1}="${esc(s[p1] || "")}" data-${p2}="${esc(s[p2] || "")}">
+      <div class="sugg${s.older ? " older" : ""}" data-${p1}="${esc(s[p1] || "")}" data-${p2}="${esc(s[p2] || "")}">
         <span class="src tag ${s.dom}">${esc(s.titulo && s.dom === "tarjeta" ? s.titulo : (DOM_LABEL[s.dom] || s.dom))}</span>
         <div class="pri" data-l="${p1}">${esc(s[p1] || s[p2])}</div>${s[p2] && s[p1] ? `<div class="sec" data-l="${p2}">${esc(s[p2])}</div>` : ""}
       </div>`).join("");
@@ -223,8 +224,10 @@
     const lead = leadDomain();
     for (const el of $("domainMeter").children) {
       const d = el.dataset.dom;
-      el.querySelector("b").textContent = Math.round((session.acc[d] / total) * 100) + "%";
+      const pct = Math.round((session.acc[d] / total) * 100);
+      el.querySelector("b").textContent = pct + "%";
       el.classList.toggle("lead", d === lead);
+      el.hidden = pct === 0;
     }
     for (const b of $("cardTabs").children) b.textContent = b.dataset.cat + (TAB_FOR_DOM[lead] === b.dataset.cat ? " ●" : "");
   }
@@ -371,7 +374,7 @@
   function onAiMessage(e) {
     const m = e.data || {};
     if (m.type === "progress") { if (m.pct < 100) notice(`Downloading the high-accuracy model (one time only, ~${m.mb} MB)… ${m.pct}%`); }
-    else if (m.type === "ready") { aiReady = true; notice(""); toast("High-accuracy mode ready", 2500); }
+    else if (m.type === "ready") { aiReady = true; notice(""); toast(`High-accuracy mode ready${/gpu/.test(m.mode) ? " · using GPU" : ""}`, 2500); }
     else if (m.type === "error" && !m.id) { aiFailed = true; notice("High-accuracy mode is not available in this browser; using the fast transcript only."); setTimeout(() => notice(""), 6000); }
     else if (m.type === "asr" || m.type === "error") {
       const job = aiJobs.get(m.id); aiJobs.delete(m.id);
@@ -386,27 +389,69 @@
     const wOld = words(job.text), wNew = words(text);
     if (wNew.join(" ") === wOld.join(" ")) return;
     // descarta alucinaciones (mucho texto de más) o cortes (dejó fuera buena parte de lo dicho)
-    if (wNew.length > wOld.length * 2 + 4 || wNew.length < Math.floor(wOld.length * 0.6)) return;
+    if (!job.forced && (wNew.length > wOld.length * 2 + 4 || wNew.length < Math.floor(wOld.length * 0.6))) return;
     const a = analyze(text);
     const now = Date.now();
     for (const e of a.terms) if (!job.terms.has(e)) {
       job.terms.add(e);
       const v = session.termsSeen.get(e) || { n: 0, t: 0 }; v.n++; v.t = now; session.termsSeen.set(e, v);
     }
-    job.text = text;
+    job.text = text; job.row._text = text;
     // vuelve a extraer los datos de esta fila con el texto corregido
     const rid = +job.row.dataset.rid;
     const kr = extractKeys(a, rid, job.row._ctx);
     if (kr.items && kr.items.length) {
       session.keys = session.keys.filter((k) => !(k.rows && k.rows.length === 1 && k.rows[0] === rid && !k.confirmed));
-      storeKeys(kr.items, rid); renderKeys();
+      storeKeys(kr.items, rid); renderKeys(); renderStrip();
     }
     const orig = job.row.querySelector(".cell.orig");
-    orig.innerHTML = a.html; orig.classList.add("refined");
+    withStableScroll(() => { orig.innerHTML = a.html; orig.classList.add("refined", "flash"); });
+    setTimeout(() => orig.classList.remove("flash"), 900);
     orig.title = "Corrected by the high-accuracy engine";
     fillTranslation(job.row, text, job.lang);
     renderTerms();
     if (job.row === $("transcript").lastElementChild) renderSuggestions(suggestionsFor(a));
+  }
+
+  // ───────────────── Scroll estable de la transcripción ─────────────────
+  // Solo se baja sola si estás al final. Si subiste a leer, se queda quieta aunque lleguen frases nuevas
+  // o se corrijan/traduzcan otras (se "ancla" a la fila que estás viendo), y aparece "↓ Live".
+  let pinned = true, unseenRows = 0;
+  function isAtBottom() { const t = $("transcript"); return t.scrollHeight - t.scrollTop - t.clientHeight < 48; }
+  function updateJump() {
+    const j = $("jumpLive");
+    j.hidden = pinned;
+    j.textContent = unseenRows ? `↓ ${unseenRows} new` : "↓ Live";
+  }
+  function withStableScroll(fn) {
+    const t = $("transcript");
+    if (pinned) { fn(); t.scrollTop = t.scrollHeight; return; }
+    let anchor = null, off = 0;
+    for (const r of t.children) { if (r.offsetTop + r.offsetHeight > t.scrollTop) { anchor = r; off = r.offsetTop - t.scrollTop; break; } }
+    fn();
+    if (anchor && anchor.isConnected) t.scrollTop = anchor.offsetTop - off;
+  }
+
+  /** Corrige el idioma de una frase: la mueve de columna, la vuelve a traducir y (si hay audio) Whisper la re-transcribe. */
+  function flipRowLang(row) {
+    if (!session || !row._lang) return;
+    const lang = row._lang === "es" ? "en" : "es";
+    row._lang = lang; lastLang = lang;
+    const orig = row.querySelector(".cell.orig"), xl = row.querySelector(".cell.xl");
+    withStableScroll(() => {
+      row.querySelector(".lang").textContent = lang.toUpperCase();
+      orig.setAttribute("lang", lang); xl.setAttribute("lang", lang === "es" ? "en" : "es");
+      if (lang === "en") row.insertBefore(orig, xl); else row.insertBefore(xl, orig);
+      xl.textContent = "";
+    });
+    fillTranslation(row, row._text, lang);
+    if (row._audio && cfg.precise && aiReady && getAi()) {
+      const id = ++aiSeq, audio = row._audio.slice();
+      aiJobs.set(id, { row, text: row._text, lang, terms: new Set(), forced: true });
+      row.classList.add("refining");
+      ai.postMessage({ type: "asr", id, lang, audio, conf: 0 }, [audio.buffer]);
+    }
+    toast(`Moved to ${lang === "en" ? "English" : "Español"}`);
   }
 
   // ───────────────── Transcripción a dos columnas: English | Español ─────────────────
@@ -419,15 +464,19 @@
     translate(text, lang).then((t) => {
       if (seq !== row._trSeq || !row.isConnected) return;
       cell.classList.remove("pending");
-      cell.textContent = t || "";
-      const tr = $("transcript");
-      if (tr.scrollHeight - tr.scrollTop - tr.clientHeight < 160) tr.scrollTop = tr.scrollHeight;
+      withStableScroll(() => { cell.textContent = t || ""; });
     });
   }
 
   /** Procesa una frase final. lang = "es" | "en" (idioma en que se dijo). audio = Float32Array 16 kHz (opcional). */
-  function handleFinal(text, lang, audio) {
-    text = text.trim();
+  /** Arreglos comunes del motor rápido: "three d" → "3D", "two d" → "2D". */
+  function tidy(text, lang) {
+    if (lang === "en") text = text.replace(/\b(two|three|four)[\s-]+d\b/gi, (m, w) => ({ two: "2", three: "3", four: "4" })[w.toLowerCase()] + "D");
+    else text = text.replace(/\b(dos|tres)[\s-]+de\b(?=\s*(?:$|[.,]|impres|anima|modelo|película|pelicula))/gi, (m, w) => (w.toLowerCase() === "dos" ? "2D" : "3D"));
+    return text;
+  }
+  function handleFinal(text, lang, audio, conf) {
+    text = tidy(text.trim(), lang || langOf());
     if (!text || !session) return;
     lang = lang || langOf();
     const a = analyze(text);
@@ -454,11 +503,14 @@
     row.className = "trow " + (a.doms[0] || "");
     const origCell = `<div class="cell orig" lang="${lang}">${a.html}</div>`;
     const xlCell = `<div class="cell xl" lang="${lang === "es" ? "en" : "es"}"></div>`;
-    row.innerHTML = `<div class="meta"><span class="time">${fmtTime(elapsed())}</span><span class="lang">${lang.toUpperCase()}</span>${tags.map((t) => `<span class="tag ${t}">${DOM_LABEL[t]}</span>`).join("")}</div>`
+    row._lang = lang; row._text = text;
+    row.innerHTML = `<div class="meta"><span class="time">${fmtTime(elapsed())}</span><button type="button" class="lang" title="Wrong language? Click to switch EN ⇄ ES">${lang.toUpperCase()}</button>${tags.map((t) => `<span class="tag ${t}">${DOM_LABEL[t]}</span>`).join("")}</div>`
       + (lang === "en" ? origCell + xlCell : xlCell + origCell);
-    tr.appendChild(row);
-    while (tr.children.length > 300) tr.firstChild.remove();
-    tr.scrollTop = tr.scrollHeight;
+    withStableScroll(() => {
+      tr.appendChild(row);
+      while (tr.children.length > 400) tr.firstChild.remove();
+    });
+    if (!pinned) { unseenRows++; updateJump(); }
     clearInterim();
     fillTranslation(row, text, lang);
 
@@ -467,11 +519,37 @@
       const id = ++aiSeq;
       aiJobs.set(id, { row, text, lang, terms: new Set(a.terms) });
       row.classList.add("refining");
-      ai.postMessage({ type: "asr", id, lang, audio }, [audio.buffer]);
+      row._audio = audio.slice();   // copia (últimas 30 frases) para poder re-transcribir si se corrige el idioma
+      const withAudio = [...tr.querySelectorAll(".trow")].filter((r) => r._audio);
+      while (withAudio.length > 30) withAudio.shift()._audio = null;
+      ai.postMessage({ type: "asr", id, lang, audio, conf: conf || 0 }, [audio.buffer]);
     }
 
-    renderSuggestions(suggestionsFor(a));
-    renderMeter(); renderTerms(); renderKeys();
+    session.recent.push(a); if (session.recent.length > 3) session.recent.shift();
+    renderSuggestions(contextSuggestions(a));
+    renderMeter(); renderTerms(); renderKeys(); renderStrip();
+  }
+  /** Sugerencias de la última frase primero, completadas con el contexto de las 2 anteriores. */
+  function contextSuggestions(a) {
+    const out = suggestionsFor(a);
+    const seen = new Set(out.map((x) => x.es));
+    for (const prev of session.recent.slice(0, -1).reverse()) {
+      for (const s2 of suggestionsFor({ ...prev, keyItems: [] })) {
+        if (out.length >= 7) break;
+        if (!seen.has(s2.es) && s2.dom !== "general") { seen.add(s2.es); out.push({ ...s2, older: true }); }
+      }
+    }
+    return out;
+  }
+  /** Franja de contexto bajo la transcripción (estilo subtítulos en vivo): datos clave y términos recientes. */
+  function renderStrip() {
+    const box = $("ctxStrip");
+    if (!session) { box.innerHTML = ""; return; }
+    const keys = session.keys.filter((k) => !k.hidden && k.type !== "number").map((k) => ({ t: k.t, html: `<button type="button" class="chip key-chip ${k.check ? "check" : ""}" data-copy="${esc(k.value)}" title="${esc(k.label)} — click to copy"><b>${KEY_ICON[k.type] || "•"} ${esc(k.label)}</b> ${esc(keyValueShown(k))}</button>` }));
+    const terms = [...session.termsSeen.entries()].map(([e, v]) => ({ t: v.t, html: `<button type="button" class="chip term-chip ${e.dom}" data-copy="${esc(e.tr)}" title="${esc(e.d || "")}"><b>${esc(e.t)}</b> ${esc(String(e.tr || "").split(",")[0])}</button>` }));
+    const all = keys.concat(terms).sort((x, y) => y.t - x.t).slice(0, 14);
+    box.innerHTML = all.map((x) => x.html).join("");
+    box.scrollLeft = 0;
   }
 
   function clearInterim() {
@@ -498,7 +576,7 @@
         session.liveTerms.add(e); changed = true;
         const v = session.termsSeen.get(e) || { n: 0, t: 0 }; v.n++; v.t = now; session.termsSeen.set(e, v);
       }
-      if (changed) renderTerms();
+      if (changed) { renderTerms(); renderStrip(); }
       const s = suggestionsFor(a);
       if (a.terms.length || s.length > 1 || a.question) renderSuggestions(s);
       // traducción en vivo: una a la vez, siempre con el texto más reciente
@@ -521,7 +599,7 @@
   // ───────────────── Tarjetas ─────────────────
   // Tarjetas base (data/tarjetas.js) + tarjetas propias (guardadas solo en este navegador).
   // "claves": palabras que, al escucharse, muestran la tarjeta como sugerencia.
-  let activeCat = "Introduction";
+  let activeCat = "Introduction", cardQuery = "";
   let customCards = store.get("inturp.cards", []);
   let cardsCache = null;
   const fill = (s) => String(s || "").replace(/\{nombre\}/g, cfg.name || "___").replace(/\{id\}/g, cfg.id || "___");
@@ -543,12 +621,15 @@
     for (const b of $("audience").children) b.classList.toggle("on", b.dataset.aud === cfg.audience);
     const cats = [...new Set(cards.map((c) => c.cat))];
     if (!cats.includes(activeCat)) activeCat = cats[0];
-    $("cardTabs").innerHTML = cats.map((c) => `<button type="button" data-cat="${esc(c)}" class="${c === activeCat ? "on" : ""}">${esc(c)}</button>`).join("");
-    $("cards").innerHTML = cards.filter((c) => c.cat === activeCat).map((c) => `
-      <div class="card">${c._custom !== undefined ? `<button type="button" class="del" data-del="${c._custom}" title="Delete card">×</button>` : ""}
-        <div class="title">${esc(c.titulo)}${c.claves ? ` <span class="keys" title="Shows up as a suggestion when heard: ${esc(c.claves)}">⚡</span>` : ""}</div>
+    const count = (c) => cards.filter((x) => x.cat === c).length;
+    $("cardTabs").innerHTML = cats.map((c) => `<button type="button" data-cat="${esc(c)}" class="${c === activeCat && !cardQuery ? "on" : ""}">${esc(c)} <i>${count(c)}</i></button>`).join("");
+    const q = strip(cardQuery);
+    const shown = q ? cards.filter((c) => strip(`${c.titulo} ${c.en || ""} ${c.es || ""} ${c.cat}`).includes(q)) : cards.filter((c) => c.cat === activeCat);
+    $("cards").innerHTML = shown.length ? shown.map((c) => `
+      <div class="card" tabindex="0">${c._custom !== undefined ? `<button type="button" class="del" data-del="${c._custom}" title="Delete card">×</button>` : ""}
+        <div class="title">${q ? `<span class="cat">${esc(c.cat)}</span> ` : ""}${esc(c.titulo)}${c.claves ? ` <span class="keys" title="Shows up as a suggestion when heard: ${esc(c.claves)}">⚡</span>` : ""}</div>
         <div class="pri" data-copy="${esc(fill(c[p1] || c[p2]))}">${esc(fill(c[p1] || c[p2]))}</div>
-        ${c[p1] && c[p2] ? `<div class="sec" data-copy="${esc(fill(c[p2]))}">${esc(fill(c[p2]))}</div>` : ""}</div>`).join("");
+        ${c[p1] && c[p2] ? `<div class="sec" data-copy="${esc(fill(c[p2]))}">${esc(fill(c[p2]))}</div>` : ""}</div>`).join("") : `<p class="empty">No cards match “${esc(cardQuery)}”.</p>`;
     $("cardCats").innerHTML = cats.map((c) => `<option value="${esc(c)}">`).join("");
     if (session) renderMeter();
   }
@@ -736,18 +817,22 @@
       if (bw.length <= 2 && bavg < 0.8) return;
       lastLang = best;
       handleInterim("");
-      handleFinal(seg[best].map((x) => x.word).join(" "), best, takeAudio());
+      handleFinal(seg[best].map((x) => x.word).join(" "), best, takeAudio(), bavg);
     };
     for (let i = 0; i < models.length; i++) {
       const lg = langs[i];
       const r = new models[i].KaldiRecognizer(rate);
-      if (auto) r.setWords(true);
+      r.setWords(true);   // confianza por palabra: decide idioma y si hace falta que Whisper corrija
       r.on("result", (m) => {
         if (gen !== voskGen) return;
         v.partial[lg] = "";
         const res = m.result || {};
         if (!res.text) { if (!auto && !v.partialText) { v.chunks = []; v.samples = 0; } return; }
-        if (!auto) { handleInterim(""); handleFinal(res.text, lg, takeAudio()); return; }
+        if (!auto) {
+          const w = res.result || [];
+          const conf = w.length ? w.reduce((t, x) => t + (x.conf || 0), 0) / w.length : 0;
+          handleInterim(""); handleFinal(res.text, lg, takeAudio(), conf); return;
+        }
         if (!v.seg) { v.seg = { es: [], en: [] }; setTimeout(decide, 450); }
         v.seg[lg].push(...(res.result || res.text.split(" ").map((w) => ({ word: w, conf: 0.5 }))));
       });
@@ -943,6 +1028,8 @@
   }
 
   function wipe() {
+    $("ctxStrip").innerHTML = "";
+    pinned = true; unseenRows = 0; updateJump();
     session = null; t0 = 0; pausedMs = 0;
     $("transcript").innerHTML = `<p class="empty">Call ended. All content was erased.</p>`;
     clearInterim();
@@ -954,7 +1041,7 @@
     $("notes").value = "";
     $("simInput").value = "";
     $("timer").textContent = "00:00";
-    for (const el of $("domainMeter").children) { el.querySelector("b").textContent = "0%"; el.classList.remove("lead"); }
+    for (const el of $("domainMeter").children) { el.querySelector("b").textContent = "0%"; el.classList.remove("lead"); el.hidden = true; }
     renderCards();
   }
 
@@ -1052,12 +1139,35 @@
       const l = (e.target.closest("[data-l]") || el.querySelector(".pri")).dataset.l;
       copy(el.dataset[l]);
     };
-    $("cardTabs").onclick = (e) => { const b = e.target.closest("button"); if (b) { activeCat = b.dataset.cat; renderCards(); } };
+    $("cardTabs").onclick = (e) => { const b = e.target.closest("button"); if (b) { activeCat = b.dataset.cat; cardQuery = ""; $("cardFilter").value = ""; renderCards(); $("cards").scrollTop = 0; } };
     $("cards").onclick = (e) => {
       const del = e.target.closest("[data-del]");
       if (del) { if (confirm("Delete this card?")) { customCards.splice(+del.dataset.del, 1); saveCustomCards(); } return; }
       const el = e.target.closest("[data-copy]") || e.target.closest(".card")?.querySelector(".pri"); if (el) copy(el.dataset.copy);
     };
+    $("transcript").addEventListener("scroll", () => {
+      const was = pinned; pinned = isAtBottom();
+      if (pinned) unseenRows = 0;
+      if (was !== pinned || pinned) updateJump();
+    }, { passive: true });
+    $("transcript").addEventListener("click", (e) => { const b = e.target.closest(".trow .lang"); if (b) flipRowLang(b.closest(".trow")); });
+    $("jumpLive").onclick = () => { const t = $("transcript"); pinned = true; unseenRows = 0; t.scrollTop = t.scrollHeight; updateJump(); };
+    // tamaño de letra de la transcripción (accesibilidad)
+    const applyFont = () => { document.documentElement.style.setProperty("--tsize", cfg.fontSize + "px"); };
+    applyFont();
+    $("btnFontDown").onclick = () => { cfg.fontSize = Math.max(12, cfg.fontSize - 1); saveCfg(); applyFont(); };
+    $("btnFontUp").onclick = () => { cfg.fontSize = Math.min(28, cfg.fontSize + 1); saveCfg(); applyFont(); };
+    // secciones plegables (se recuerda cuáles cerraste)
+    for (const box of document.querySelectorAll(".box[data-box]")) {
+      const id = box.dataset.box;
+      box.classList.toggle("collapsed", !!cfg.collapsed[id]);
+      box.querySelector(".collapse").onclick = () => {
+        cfg.collapsed[id] = !cfg.collapsed[id]; saveCfg();
+        box.classList.toggle("collapsed", cfg.collapsed[id]);
+      };
+    }
+    $("cardFilter").oninput = (e) => { cardQuery = e.target.value.trim(); renderCards(); };
+    $("ctxStrip").onclick = (e) => { const b = e.target.closest("[data-copy]"); if (b) copy(b.dataset.copy); };
     $("sideTabs").onclick = (e) => {
       const b = e.target.closest("button"); if (!b) return;
       const g = $("grid"); g.classList.toggle("t-assist", b.dataset.t === "assist"); g.classList.toggle("t-side", b.dataset.t === "side");
@@ -1070,9 +1180,9 @@
       const act = btn.dataset.act;
       if (act === "copy") copy(k.value);
       else if (act === "note") { addToNotes(keyLine(k)); toast("Added to notes"); }
-      else if (act === "reveal") { k.revealed = !k.revealed; renderKeys(); }
+      else if (act === "reveal") { k.revealed = !k.revealed; renderKeys(); renderStrip(); }
       else if (act === "ok") { k.check = false; k.confirmed = true; k.note = "Confirmed"; renderKeys(); }
-      else if (act === "del") { k.hidden = true; renderKeys(); }
+      else if (act === "del") { k.hidden = true; renderKeys(); renderStrip(); }
     };
     $("btnKeysToNotes").onclick = () => {
       if (!session) return;
