@@ -231,6 +231,7 @@
   ];
   const BY_TYPE = Object.fromEntries(FIELDS.map((f) => [f.type, f]));
   const NAME_STOP = new Set("is es and y the el la de del los las a my mi su your i yo it its im soy please por favor um uh eh este pues so ok okay bueno well and thank thanks gracias sir senor senora maam miss naci vivo tengo born live have was fue".split(" "));
+  const NAME_FIELD = new Set("date birth number address phone social security card account email please por favor fecha nacimiento numero direccion telefono correo tarjeta cuenta".split(" "));
   const LETTER_WORDS = { ay: "a", bee: "b", see: "c", sea: "c", dee: "d", ee: "e", ef: "f", gee: "g", aitch: "h", jay: "j", kay: "k", el: "l", em: "m", en: "n", pee: "p", cue: "q", queue: "q", ar: "r", es: "s", tee: "t", you: "u", vee: "v", ex: "x", why: "y", zee: "z", zed: "z" };
 
   /** Junta letras deletreadas: "j o h n" / "j-o-h-n" → "john". */
@@ -361,14 +362,17 @@
       }
     }
 
-    // ── nombres
+    // ── nombres (solo en respuestas, no en preguntas como "can I have your full name and date of birth?")
+    const isQuestion = /\?/.test(n) || /^\s*(can|could|may|what|whats|what's|please|cual|como|me (puede|podria) dar|puede darme)\b/.test(n);
     for (const m of mentions) {
-      if (!m.f.name) continue;
+      if (!m.f.name || isQuestion) continue;
       const toks = tokenize(n.slice(m.b, m.b + 60));
       const ws = [];
       const tailN = n.slice(m.b, m.b + 60);
       for (const t of toks) {
         if (ws.length && /[,.;:!?]/.test(tailN.slice(ws[ws.length - 1].b, t.a))) break;
+        if (!ws.length && /^(and|y|or|o|number|numero|date|fecha|address|direccion|phone|telefono)$/.test(t.w)) break;
+        if (NAME_FIELD.has(t.w)) break;
         if (NAME_STOP.has(t.w) && !ws.length) continue;
         if (NAME_STOP.has(t.w) || isNumWord(t.w) || t.w.length < 2) break;
         ws.push(t); if (ws.length >= 3) break;

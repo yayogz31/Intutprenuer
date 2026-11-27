@@ -15,8 +15,9 @@
 <body>
   <header class="topbar">
     <div class="brand" title="Interpreter assistant · runs on your device · nothing recorded">
-      <span class="logo" aria-hidden="true"></span>
+      <span class="logo" aria-hidden="true">I</span>
       <h1>Inturpreneur</h1>
+      <span class="brand-sub">Interpreter workspace</span>
     </div>
 
     <div class="controls">
@@ -28,22 +29,22 @@
           <option value="es-US">Spanish (US)</option>
           <option value="es-ES">Spanish (ES)</option>
         </select>
-        <button id="btnSwap" class="btn ghost icon" title="Switch language: ES → EN → Auto (Alt+L)">⇄</button>
+        <button id="btnSwap" class="btn ghost icon" title="Switch language: ES → EN → Auto (Alt+L)" aria-label="Switch language"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4 3 8l4 4"/><path d="M3 8h14"/><path d="m17 20 4-4-4-4"/><path d="M21 16H7"/></svg></button>
         <select id="selSource" title="Audio source">
-          <option value="mic">🎤 Microphone</option>
-          <option value="system">🖥 Tab / system audio</option>
-          <option value="mix">🎤+🖥 Mic + system</option>
+          <option value="mic">Microphone</option>
+          <option value="system">Tab / system audio</option>
+          <option value="mix">Microphone + system audio</option>
         </select>
       </div>
       <div class="ctl-group">
-        <button id="btnStart" class="btn start">▶ Start</button>
-        <button id="btnPause" class="btn pause" disabled>❚❚ Pause</button>
-        <button id="btnStop" class="btn stop" disabled>■ End</button>
+        <button id="btnStart" class="btn start"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg><span>Start</span></button>
+        <button id="btnPause" class="btn pause" disabled><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"/><rect x="14" y="4.5" width="4" height="15" rx="1"/></svg><span>Pause</span></button>
+        <button id="btnStop" class="btn stop" disabled><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg><span>End</span></button>
       </div>
       <div class="ctl-group">
         <span id="status" class="status idle">Idle</span>
         <span id="timer" class="timer">00:00</span>
-        <button id="btnSettings" class="btn ghost icon" title="Settings">⚙</button>
+        <button id="btnSettings" class="btn ghost icon" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
       </div>
     </div>
   </header>
@@ -59,7 +60,7 @@
     <!-- COLUMN 1: transcript -->
     <section class="panel col-transcript">
       <div class="panel-head">
-        <h2><span class="h-ico">💬</span>Live transcript</h2>
+        <h2>Live transcript <span id="prio" class="prio" hidden></span></h2>
         <div class="head-actions">
           <div id="domainMeter" class="meter">
             <span data-dom="medico" hidden>Medical <b>0%</b></span>
@@ -73,7 +74,7 @@
           </div>
         </div>
       </div>
-      <div class="cols-head"><span>🇺🇸 English</span><span>🇲🇽 Español</span></div>
+      <div class="cols-head"><span>English</span><span>Español</span></div>
       <div class="transcript-wrap">
         <div id="transcript" class="transcript" aria-live="polite">
           <p class="empty">Press <b>Start</b> to begin. Nothing is saved: everything is erased when the call ends.</p>
@@ -83,7 +84,7 @@
       <div id="interim" class="trow interim"><div class="cell" data-l="en"></div><div class="cell" data-l="es"></div></div>
       <div id="ctxStrip" class="ctx-strip" title="Key information and terms from the conversation — click to copy"></div>
       <form id="simForm" class="simform" autocomplete="off">
-        <input id="simInput" type="text" placeholder="⌨  Test without audio: type a sentence and press Enter">
+        <input id="simInput" type="text" placeholder="Test without audio — type a sentence and press Enter">
       </form>
     </section>
 
@@ -91,7 +92,7 @@
     <section class="panel col-assist">
       <div class="box box-sugg" data-box="sugg">
         <div class="panel-head box-head">
-          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev">▾</span><h2><span class="h-ico">💡</span>Suggested responses</h2></button>
+          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev" aria-hidden="true"></span><h2>Suggested responses</h2></button>
           <small>click = copy</small>
         </div>
         <div id="suggestions" class="box-body suggestions">
@@ -100,13 +101,13 @@
       </div>
       <div class="box box-cards" data-box="cards">
         <div class="panel-head box-head">
-          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev">▾</span><h2><span class="h-ico">🗂</span>Cards</h2></button>
+          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev" aria-hidden="true"></span><h2>Cards</h2></button>
           <span class="head-actions">
             <div id="audience" class="seg" title="Who you are speaking to">
               <button type="button" data-aud="provider">Provider · EN</button>
               <button type="button" data-aud="lep">LEP · ES</button>
             </div>
-            <button id="btnAddCard" class="btn ghost tiny" title="Add your own cards">＋</button>
+            <button id="btnAddCard" class="btn ghost tiny" title="Add your own cards">+ Card</button>
           </span>
         </div>
         <div class="box-tools">
@@ -121,15 +122,15 @@
     <section class="panel col-side">
       <div class="box box-keys" data-box="keys">
         <div class="panel-head box-head">
-          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev">▾</span><h2><span class="h-ico">🔑</span>Key information</h2></button>
+          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev" aria-hidden="true"></span><h2>Key information</h2></button>
           <span class="head-actions"><span id="keyCount" class="badge">0</span> <button id="btnKeysToNotes" class="btn ghost tiny" title="Add all key information to notes">→ Notes</button></span>
         </div>
         <div id="keys" class="box-body keys"><p class="empty">Names, numbers, dates, amounts and IDs will appear here, organized by what was asked.</p></div>
       </div>
       <div class="box box-terms" data-box="terms">
         <div class="panel-head box-head">
-          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev">▾</span><h2><span class="h-ico">📖</span>Terminology</h2></button>
-          <span id="termCount" class="badge">0</span>
+          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev" aria-hidden="true"></span><h2>Terminology</h2></button>
+          <span class="head-actions"><span id="termCount" class="badge">0</span> <button id="btnAddTerm" class="btn ghost tiny" title="Add your own terms with your preferred translation">+ My term</button></span>
         </div>
         <div class="box-tools"><input id="glossSearch" class="search slim" type="search" placeholder="Search the glossary…"></div>
         <div id="glossResults" class="terms gloss-results"></div>
@@ -137,7 +138,7 @@
       </div>
       <div class="box box-notes" data-box="notes">
         <div class="panel-head box-head">
-          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev">▾</span><h2><span class="h-ico">📝</span>Notes</h2></button>
+          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev" aria-hidden="true"></span><h2>Notes</h2></button>
           <button id="btnCopyNotes" class="btn ghost tiny" title="Copy notes to clipboard">Copy</button>
         </div>
         <textarea id="notes" class="box-body" spellcheck="false" autocomplete="off" placeholder="Temporary notes (erased when the call ends)"></textarea>
@@ -157,9 +158,18 @@
           <option value="browser">Browser engine (online, Chrome/Edge only)</option>
         </select>
       </label>
-      <label class="row"><input id="cfgMask" type="checkbox"> Hide SSN and card numbers on screen (click 👁 to show)</label>
+      <label>Performance
+        <select id="cfgPerf">
+          <option value="auto">Automatic (recommended)</option>
+          <option value="lite">Lite — lightest, for modest devices</option>
+          <option value="balanced">Balanced — corrects only unclear sentences</option>
+          <option value="max">Max — corrects every sentence (powerful devices)</option>
+        </select>
+      </label>
+      <p id="perfInfo" class="hint"></p>
+      <label class="row"><input id="cfgMask" type="checkbox"> Hide SSN and card numbers on screen (click "Show" to reveal)</label>
       <label class="row"><input id="cfgPrecise" type="checkbox"> High-accuracy transcript (Whisper, offline)</label>
-      <p class="hint">The fast engine shows text instantly; Whisper re-checks each sentence a moment later and corrects it (marked ✓). First use downloads ~100 MB, then it stays saved.</p>
+      <p class="hint">The fast engine shows text instantly; Whisper re-checks sentences a moment later and corrects them (marked ✓). First use downloads ~100 MB, then it stays saved in the browser.</p>
       <label class="row"><input id="cfgTranslate" type="checkbox"> Live translation (EN ⇄ ES)</label>
       <p id="trInfo" class="hint"></p>
       <label class="row"><input id="cfgLocal" type="checkbox"> Browser engine: process on device (if supported)</label>
@@ -204,6 +214,28 @@
         <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
         <button id="btnSaveCard" type="button" class="btn start">Save</button>
       </div>
+    </form>
+  </dialog>
+
+  <!-- My terms -->
+  <dialog id="dlgTerm">
+    <form id="termForm" method="dialog" class="dlg">
+      <h2>My terms</h2>
+      <p class="hint">Add words you want translated your way. They are highlighted in the transcript and applied to the live translation (e.g. <b>adjuster → perito de seguros</b>).</p>
+      <label>English term <input id="termEn" type="text" placeholder="adjuster"></label>
+      <label>Preferred Spanish translation <input id="termEs" type="text" placeholder="perito de seguros"></label>
+      <label>Note / definition (optional) <input id="termNote" type="text" placeholder="Insurance professional who assesses the damage"></label>
+      <label>Domain
+        <select id="termDom"><option value="general">General</option><option value="medico">Medical</option><option value="legal">Legal</option><option value="bancario">Banking</option><option value="seguros">Insurance</option></select>
+      </label>
+      <p id="termInfo" class="hint"></p>
+      <div class="row end">
+        <button class="btn ghost" value="cancel" formnovalidate>Close</button>
+        <button id="btnSaveTerm" type="button" class="btn primary">Save term</button>
+      </div>
+      <h3>Saved terms</h3>
+      <div id="myTermsList" class="mytermslist"></div>
+      <p class="hint">Saved only in this browser.</p>
     </form>
   </dialog>
 

@@ -17,6 +17,28 @@ Botones **Iniciar**, **Pausar/Reanudar** y **Terminar**. Atajos: `Alt+S`, `Alt+P
   - **To Provider:** inglés grande, español abajo (para lo que le dices al proveedor o agente).
   - **To LEP:** español grande, inglés abajo (las mismas tarjetas, dirigidas a la persona LEP).
 
+## Preguntas frecuentes
+
+**¿Se descarga algo en mi laptop?** No como un archivo en "Descargas". Los modelos (~250 MB) los guarda el **navegador** en su almacenamiento para este sitio, para funcionar sin internet. Se borran desde el candado de la barra de direcciones → *Configuración del sitio* → *Borrar datos*. Las llamadas nunca se guardan.
+
+**¿Funciona igual en cualquier equipo?** La app elige sola un **perfil de rendimiento** (⚙ → *Performance*):
+
+| Perfil | Para | Qué hace |
+|---|---|---|
+| **Lite** | equipos modestos (≤2 núcleos o ≤4 GB) | Solo el motor rápido + traducción; sin Whisper. Lo más ligero. |
+| **Balanced** | la mayoría | Whisper solo revisa las frases dudosas (baja confianza o idioma dudoso). |
+| **Max** | equipos potentes (≥8 núcleos) | Whisper revisa todas las frases y confirma el idioma en modo Auto. |
+
+Si hay tarjeta de video compatible, Whisper la usa; si es débil, usa el procesador.
+
+## Novedades
+
+- **Audio poco claro:** si el motor rápido no está seguro (ruido, música, otro idioma), la frase aparece atenuada como *Unclear audio* en lugar de mostrar texto sin sentido. Whisper la revisa y, si la entiende, la reemplaza por la frase correcta.
+- **Idioma confirmado por Whisper:** en modo Auto, si el idioma es dudoso, Whisper detecta el idioma real de la frase y la mueve a la columna correcta.
+- **My terms:** en *Terminology → + My term* agrega palabras con tu traducción preferida (p. ej. *adjuster → perito de seguros*). Se resaltan en la transcripción y **se aplican a la traducción automática** en ambos sentidos.
+- **Alerta de datos personales:** si quien habla en inglés pide datos personales, aparece en rojo *Not allowed*: interpreta la pregunta al LEP; como intérprete no debes proporcionar ni confirmar datos personales.
+- **Importancia de la llamada:** junto a *Live transcript* aparece **Routine / Important / Urgent**, según lo que se escucha (emergencias, fraude, accidentes, corte, datos sensibles…). Pasa el cursor para ver el motivo.
+
 ## Uso rápido
 
 - **Transcripción estable:** si subes a leer, la transcripción no se mueve aunque sigan llegando frases o se corrijan otras. El botón **↓ Live** (o "↓ 5 new") te regresa al final.

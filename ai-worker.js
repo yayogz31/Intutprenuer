@@ -3,7 +3,7 @@
  * Corre en un hilo aparte para no trabar la página. No envía nada a internet: los modelos
  * se sirven desde este mismo sitio (carpeta models/hf).
  */
-import { pipeline, env } from "./vendor/tf/transformers.min.js";
+import { pipeline, env, Tensor } from "./vendor/tf/transformers.min.js";
 
 const BASE = new URL("./", self.location.href).href;
 env.allowRemoteModels = false;
@@ -81,10 +81,26 @@ function isRepetitive(text) {
   return Math.max(...seen.values()) >= 4;
 }
 
+/** Detector de idioma de Whisper: probabilidad del token <|en|> frente a <|es|> en el primer paso del decodificador. */
+async function detectLang(asr, audio) {
+  const gc = asr.model.generation_config || {};
+  const l2i = gc.lang_to_id || {};
+  const sot = gc.decoder_start_token_id ?? 50258, en = l2i["<|en|>"] ?? 50259, es = l2i["<|es|>"] ?? 50262;
+  const { input_features } = await asr.processor(audio);
+  const r = await asr.model({ input_features, decoder_input_ids: new Tensor("int64", BigInt64Array.from([BigInt(sot)]), [1, 1]) });
+  const d = r.logits.data, off = d.length - r.logits.dims.at(-1);
+  const diff = d[off + en] - d[off + es];
+  return { lang: diff > 0 ? "en" : "es", margin: Math.abs(diff) };
+}
+
 async function run(job, retry) {
   const asr = await getAsr();
   const t0 = performance.now();
   const secs = job.audio.length / 16000;
+  // modo Auto: si el idioma es dudoso y la frase es suficientemente larga, Whisper confirma el idioma real
+  if (job.detect && secs >= 2.5) {
+    try { const d = await detectLang(asr, job.audio); if (d.margin > 1 && d.lang !== job.lang) job.lang = d.lang; } catch { /* sigue con el idioma dado */ }
+  }
   const out = await asr(job.audio, {
     task: "transcribe",
     language: job.lang === "en" ? "english" : "spanish",   // el idioma lo decide la app (Whisper en el navegador no lo detecta)
@@ -94,7 +110,7 @@ async function run(job, retry) {
   // "otro, otro, otro" → "otro" (palabras repetidas sin sentido)
   text = text.replace(/\b([\p{L}']+)(?:[,.\s]+\1\b){2,}/giu, "$1");
   if (HALLUCINATIONS.test(text) || isRepetitive(text)) text = "";
-  self.postMessage({ type: "asr", id: job.id, text, ms: Math.round(performance.now() - t0), mode });
+  self.postMessage({ type: "asr", id: job.id, text, lang: job.lang, ms: Math.round(performance.now() - t0), mode });
 }
 
 async function pump() {
@@ -105,7 +121,7 @@ async function pump() {
     while (queue.length > 3) { const old = queue.shift(); self.postMessage({ type: "asr", id: old.id, text: "", skipped: true }); }
     const job = queue.shift();
     // con trabajo pendiente, las frases que el motor rápido ya entendió con mucha seguridad se saltan
-    if (queue.length && job.conf >= 0.9) { self.postMessage({ type: "asr", id: job.id, text: "", skipped: true }); continue; }
+    if (queue.length && job.conf >= 0.9 && !job.detect) { self.postMessage({ type: "asr", id: job.id, text: "", skipped: true }); continue; }
     try { await run(job); }
     catch (e) {
       if (mode !== "cpu") { forceCpu = true; asrPromise = null; try { await run(job); continue; } catch { /* */ } }
@@ -118,6 +134,7 @@ async function pump() {
 self.onmessage = (e) => {
   const m = e.data || {};
   if (m.type === "load") {
+    if (m.threads) env.backends.onnx.wasm.numThreads = self.crossOriginIsolated ? Math.max(1, Math.min(m.threads, navigator.hardwareConcurrency || 2)) : 1;
     getAsr().then(() => self.postMessage({ type: "ready", mode }), (err) => self.postMessage({ type: "error", error: String((err && err.message) || err) }));
   } else if (m.type === "asr") {
     queue.push(m);

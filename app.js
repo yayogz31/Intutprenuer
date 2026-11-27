@@ -7,7 +7,7 @@
   const $ = (id) => document.getElementById(id);
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const DOMS = ["medico", "legal", "bancario", "seguros"];
-  const DOM_LABEL = { medico: "Medical", legal: "Legal", bancario: "Banking", seguros: "Insurance", duda: "Question", general: "General", aviso: "Disclosure", tarjeta: "Card", confirm: "Read back", verify: "Verify" };
+  const DOM_LABEL = { medico: "Medical", legal: "Legal", bancario: "Banking", seguros: "Insurance", duda: "Question", general: "General", aviso: "Disclosure", tarjeta: "Card", confirm: "Read back", verify: "Verify", policy: "Not allowed" };
   const TAB_FOR_DOM = { medico: "Medical", legal: "Legal", bancario: "Banking", seguros: "Insurance" };
 
   // ───────────────── Utilidades ─────────────────
@@ -49,7 +49,25 @@
   }
 
   // ───────────────── Configuración (solo preferencias, nunca texto de llamadas) ─────────────────
-  const cfg = Object.assign({ name: "", id: "", local: false, lang: "auto", source: "mic", engine: "vosk", translate: true, audience: "provider", precise: true, mask: true, fontSize: 15, collapsed: {} }, store.get("inturp.cfg", {}));
+  const cfg = Object.assign({ name: "", id: "", local: false, lang: "auto", source: "mic", engine: "vosk", translate: true, audience: "provider", precise: true, mask: true, fontSize: 15, collapsed: {}, perf: "auto" }, store.get("inturp.cfg", {}));
+
+  // ───────────────── Perfil de rendimiento (se adapta a cada dispositivo) ─────────────────
+  // Lite: sin Whisper, menos trabajo en vivo (equipos modestos).  Balanced: Whisper solo corrige frases dudosas.
+  // Max: Whisper corrige todas las frases. "auto" elige según núcleos y memoria del equipo.
+  const PERF = {
+    lite:     { label: "Lite",     whisper: "off", interimMs: 150, interimTrMs: 1200, threads: 1 },
+    balanced: { label: "Balanced", whisper: "low", interimMs: 80,  interimTrMs: 550,  threads: 2 },
+    max:      { label: "Max",      whisper: "all", interimMs: 40,  interimTrMs: 250,  threads: 4 },
+  };
+  function detectPerf() {
+    const c = navigator.hardwareConcurrency || 4, m = navigator.deviceMemory || 8;
+    if (c <= 2 || m <= 4) return "lite";
+    if (c >= 8 && m >= 8) return "max";
+    return "balanced";
+  }
+  const perfKey = () => (PERF[cfg.perf] ? cfg.perf : detectPerf());
+  const P = () => PERF[perfKey()];
+  const LOW_CONF = 0.85, UNCLEAR_CONF = 0.55;
   const saveCfg = () => store.set("inturp.cfg", cfg);
 
   // ───────────────── Glosario e índice de términos ─────────────────
@@ -66,11 +84,38 @@
     if (/^(seg|ins|auto|car|veh|tran)/.test(d)) return "seguros";
     return "general";
   }
+  // "My terms": palabras propias con su traducción preferida (tienen prioridad y se aplican a la traducción automática)
+  let myTerms = store.get("inturp.myterms", []);
   function loadGlossary() {
     const extra = store.get("inturp.gloss", null);
     const base = (window.GLOSARIO_BASE || []).map((e) => ({ ...e, dom: normDom(e.dom) }));
-    glossary = extra ? (extra.replace ? extra.items : base.concat(extra.items)) : base;
+    const mine = myTerms.map((m) => ({ t: m.en, tr: m.es, d: m.note || "Your preferred translation", dom: normDom(m.dom), mine: true }));
+    glossary = mine.concat(extra ? (extra.replace ? extra.items : base.concat(extra.items)) : base);
     buildIndex();
+    mtCache.clear();
+  }
+  /** Cómo traduce la máquina un término suelto (para luego cambiarlo por tu traducción preferida). */
+  const mtCache = new Map();
+  function mtRendering(term, from) {
+    const k = from + ":" + term;
+    if (!mtCache.has(k)) mtCache.set(k, translateRaw(term, from).then((t) => (t || "").replace(/[.!?¡¿"]/g, "").trim()).catch(() => ""));
+    return mtCache.get(k);
+  }
+  async function enforceMyTerms(src, out, from) {
+    if (!myTerms.length || !out) return out;
+    const n = strip(src);
+    for (const m of myTerms) {
+      const srcTerm = from === "en" ? m.en : m.es.split(/[,/]/)[0].trim();
+      const want = from === "en" ? m.es.split(/[,/]/)[0].trim() : m.en;
+      if (!srcTerm || !want || !new RegExp(`(?<![\\p{L}])${reEsc(strip(srcTerm))}(?![\\p{L}])`, "u").test(n)) continue;
+      if (strip(out).includes(strip(want))) continue;
+      const mt = await mtRendering(srcTerm, from);
+      if (mt && mt.length > 1) {
+        const re = new RegExp(`(?<![\\p{L}])${reEsc(mt)}(?![\\p{L}])`, "iu");
+        if (re.test(out)) { out = out.replace(re, want); continue; }
+      }
+    }
+    return out;
   }
   /** Saca las formas buscables de un texto: "ATM (Automated Teller Machine)" → atm, automated teller machine;
    *  "copago, pago compartido / co-pay" → cada variante; "beneficiario(a)" → beneficiario; "to renew" → renew. */
@@ -158,9 +203,15 @@
     return html + esc(text.slice(pos));
   }
 
+  // El hablante en inglés pide datos personales → recordatorio de política para el intérprete
+  const PII_REQ = /\b((can|could|may) i (have|get|confirm|verify)|what('s| is| are)|please (provide|give|confirm|verify|spell)|i (need|will need)|tell me|give me|confirm)\b[^.?!]{0,40}\b(your|ur|the patient'?s|his|her|their|the caller'?s)\b[^.?!]{0,25}\b(full name|last name|first name|name|address|phone|number|date of birth|birthday|dob|social|ssn|e-?mail|card|account|routing|policy|member|zip|location|pin|password)\b|\bwhere (are you|do you live|are you calling from)\b|\binterpreter,? (what is|what's|can i have) your\b/;
   function suggestionsFor(a) {
     const out = []; const seen = new Set();
     const push = (s, dom) => { const k = s.es; if (!seen.has(k)) { seen.add(k); out.push({ ...s, dom }); } };
+    if (a.lang === "en" && PII_REQ.test(a.n)) push({
+      en: "Personal information request — interpret the question to the LEP. As the interpreter, you are not allowed to provide or confirm personal information yourself.",
+      es: "Solicitud de datos personales: interprete la pregunta al LEP. Como intérprete, no tiene permitido proporcionar ni confirmar datos personales.",
+      titulo: "Not allowed" }, "policy");
     const rules = (window.REGLAS || []).slice().sort((x, y) => (y.prio || 0) - (x.prio || 0));
     for (const r of rules) {
       r.re.lastIndex = 0;
@@ -184,7 +235,7 @@
       for (const s of (window.SUGERENCIAS_DEFECTO || {})[lead || "general"] || []) push(s, lead || "general");
     }
     // primero: verificar datos, luego avisos (disclosures)
-    const rank = (d) => (d === "verify" ? 3 : d === "aviso" ? 2 : d === "confirm" ? 1 : 0);
+    const rank = (d) => (d === "policy" ? 4 : d === "verify" ? 3 : d === "aviso" ? 2 : d === "confirm" ? 1 : 0);
     out.sort((x, y) => rank(y.dom) - rank(x.dom));
     return out.slice(0, 7);
   }
@@ -213,7 +264,7 @@
     if (!list.length) return;
     const [p1, p2] = primaryOrder();
     box.innerHTML = list.map((s) => `
-      <div class="sugg${s.older ? " older" : ""}" data-${p1}="${esc(s[p1] || "")}" data-${p2}="${esc(s[p2] || "")}">
+      <div class="sugg${s.older ? " older" : ""}${s.dom === "policy" ? " policy-s" : ""}" data-${p1}="${esc(s[p1] || "")}" data-${p2}="${esc(s[p2] || "")}">
         <span class="src tag ${s.dom}">${esc(s.titulo && s.dom === "tarjeta" ? s.titulo : (DOM_LABEL[s.dom] || s.dom))}</span>
         <div class="pri" data-l="${p1}">${esc(s[p1] || s[p2])}</div>${s[p2] && s[p1] ? `<div class="sec" data-l="${p2}">${esc(s[p2])}</div>` : ""}
       </div>`).join("");
@@ -234,7 +285,7 @@
 
   function termHTML(e, n) {
     return `<div class="term ${e.dom}">${n ? `<span class="n">×${n}</span>` : ""}
-      <span class="w">${esc(e.t)}</span> → <span class="tr">${esc(e.tr || "")}</span>
+      <span class="w">${e.mine ? `<span class="mine" title="Your term">★</span> ` : ""}${esc(e.t)}</span> → <span class="tr">${esc(e.tr || "")}</span>
       <div class="d">${esc(e.d || "")}</div></div>`;
   }
   function renderTerms() {
@@ -243,8 +294,7 @@
     $("terms").innerHTML = arr.length ? arr.map(([e, v]) => termHTML(e, v.n)).join("") : `<p class="empty">Glossary terms will appear here when they are heard.</p>`;
   }
   // ───────────────── Información clave ─────────────────
-  const KEY_ICON = { name: "👤", ssn: "🆔", card: "💳", cvv: "💳", account: "🏦", routing: "🏦", phone: "📞", zip: "📍", address: "📍",
-    email: "✉️", dob: "🎂", date: "📅", time: "🕒", amount: "💵", policy: "📄", claim: "📄", member: "🪪", case: "📄", plate: "🚗", number: "#", spelled: "🔤" };
+  const KEY_ICON = {};   // diseño sobrio: sin íconos
   /** Guarda los datos de una frase: si llega el resto de un número dictado en partes, actualiza el mismo dato. */
   function storeKeys(items, rowId) {
     const now = Date.now();
@@ -272,13 +322,13 @@
     box.innerHTML = list.slice().sort((x, y) => order(x) - order(y) || y.t - x.t).map((k) => `
       <div class="key ${k.check ? "check" : ""} ${k.confirmed ? "ok" : ""} ${k.type}" data-id="${k.id}">
         <div class="key-top">
-          <span class="key-label">${KEY_ICON[k.type] || "•"} ${esc(k.label)}</span>
+          <span class="key-label">${esc(k.label)}</span>
           <span class="key-acts">
-            ${k.sensitive && cfg.mask ? `<button type="button" data-act="reveal" title="Show / hide">👁</button>` : ""}
-            <button type="button" data-act="copy" title="Copy">⧉</button>
-            <button type="button" data-act="note" title="Add to notes">✎</button>
+            ${k.sensitive && cfg.mask ? `<button type="button" data-act="reveal" title="Show / hide">${k.revealed ? "Hide" : "Show"}</button>` : ""}
+            <button type="button" data-act="copy" title="Copy">Copy</button>
+            <button type="button" data-act="note" title="Add to notes">Note</button>
             <button type="button" data-act="ok" title="Mark as confirmed">✓</button>
-            <button type="button" data-act="del" title="Discard">✕</button>
+            <button type="button" data-act="del" title="Discard">×</button>
           </span>
         </div>
         <div class="key-val">${esc(keyValueShown(k))}${k.alt ? ` <small>${esc(k.alt)}</small>` : ""}</div>
@@ -347,6 +397,10 @@
   }
   async function translate(text, from) {
     if (!cfg.translate || !text) return null;
+    const out = await translateRaw(text, from);
+    return out ? enforceMyTerms(text, out, from) : out;
+  }
+  async function translateRaw(text, from) {
     const to = from === "es" ? "en" : "es";
     if (hasTranslator()) {
       const t = await getTranslator(from, to);
@@ -362,12 +416,12 @@
   let ai = null, aiReady = false, aiFailed = false, aiSeq = 0;
   const aiJobs = new Map();
   function getAi() {
-    if (!cfg.precise || aiFailed || typeof Worker === "undefined") return null;
+    if (!cfg.precise || aiFailed || P().whisper === "off" || typeof Worker === "undefined") return null;
     if (!ai) {
       try { ai = new Worker("ai-worker.js", { type: "module" }); } catch { aiFailed = true; return null; }
       ai.onmessage = onAiMessage;
       ai.onerror = () => { aiFailed = true; ai = null; };
-      ai.postMessage({ type: "load" });
+      ai.postMessage({ type: "load", threads: P().threads });
     }
     return ai;
   }
@@ -380,12 +434,34 @@
       const job = aiJobs.get(m.id); aiJobs.delete(m.id);
       if (!job) return;
       job.row.classList.remove("refining");
+      if (m.lang && m.lang !== job.lang && !job.unclear && job.row._lang === job.lang) { flipRowLang(job.row, true); job.lang = m.lang; job.forced = true; }
+      if (job.unclear) {
+        if (m.text && session && job.row.isConnected) { session.count--; handleFinal(m.text, m.lang || job.lang, null, 1, { replace: job.row, refined: true }); }
+        else if (job.row.isConnected) { const tg = job.row.querySelector(".unclear-tag"); if (tg) tg.textContent = "Unclear audio"; }
+        return;
+      }
       if (m.text) applyRefinement(job, m.text);
     }
   }
   const words = (t) => strip(t).replace(/[^\p{L}\p{N}\s']/gu, " ").split(/\s+/).filter(Boolean);
+  /** Idioma de un texto por palabras frecuentes (para detectar cuando Whisper "oyó" el otro idioma). */
+  const ES_W = new Set("el la los las de del que y en un una es por con para mi su no se lo me le al pero como muy tambien tengo esta estoy fue hay porque cuando donde usted senor senora gracias hola si ya mas yo nos les sus este esto eso ella".split(" "));
+  const EN_W = new Set("the and to of a in is it you i my that for on with have was this are be your me we he she they not do did can will would what when where there here hello thank thanks yes no please an at as but so if or from just".split(" "));
+  function detectTextLang(t) {
+    let es = 0, en = 0;
+    for (const w of strip(t).replace(/[^\p{L}\s']/gu, " ").split(/\s+/)) { if (ES_W.has(w)) es++; if (EN_W.has(w)) en++; }
+    if (es + en < 2) return null;
+    if (en >= es * 2 + 1) return "en";
+    if (es >= en * 2 + 1) return "es";
+    return null;
+  }
   function applyRefinement(job, text) {
     if (!session || !job.row.isConnected) return;
+    const det = detectTextLang(text);
+    if (det && det !== job.lang && job.row._lang === job.lang) {
+      flipRowLang(job.row, true);   // mueve de columna sin volver a pedir Whisper
+      job.lang = det; job.forced = true;
+    }
     const wOld = words(job.text), wNew = words(text);
     if (wNew.join(" ") === wOld.join(" ")) return;
     // descarta alucinaciones (mucho texto de más) o cortes (dejó fuera buena parte de lo dicho)
@@ -433,7 +509,7 @@
   }
 
   /** Corrige el idioma de una frase: la mueve de columna, la vuelve a traducir y (si hay audio) Whisper la re-transcribe. */
-  function flipRowLang(row) {
+  function flipRowLang(row, quiet) {
     if (!session || !row._lang) return;
     const lang = row._lang === "es" ? "en" : "es";
     row._lang = lang; lastLang = lang;
@@ -444,6 +520,7 @@
       if (lang === "en") row.insertBefore(orig, xl); else row.insertBefore(xl, orig);
       xl.textContent = "";
     });
+    if (quiet) { lastLang = lang; return; }
     fillTranslation(row, row._text, lang);
     if (row._audio && cfg.precise && aiReady && getAi()) {
       const id = ++aiSeq, audio = row._audio.slice();
@@ -475,11 +552,19 @@
     else text = text.replace(/\b(dos|tres)[\s-]+de\b(?=\s*(?:$|[.,]|impres|anima|modelo|película|pelicula))/gi, (m, w) => (w.toLowerCase() === "dos" ? "2D" : "3D"));
     return text;
   }
-  function handleFinal(text, lang, audio, conf) {
+  function handleFinal(text, lang, audio, conf, opts) {
+    opts = opts || {};
     text = tidy(text.trim(), lang || langOf());
     if (!text || !session) return;
     lang = lang || langOf();
+    // audio poco claro (el motor rápido no está seguro): se muestra atenuado y Whisper lo revisa primero
+    const nWords = text.split(/\s+/).length;
+    if (conf !== undefined && conf !== null && conf < UNCLEAR_CONF && !opts.replace) {
+      if (nWords < 3 && conf < 0.45) return;   // ruido
+      return addUnclearRow(text, lang, audio, conf);
+    }
     const a = analyze(text);
+    a.lang = lang;
     session.count++;
     for (const d of DOMS) session.acc[d] = session.acc[d] * 0.8 + a.score[d];
     const now = Date.now();
@@ -507,28 +592,79 @@
     row.innerHTML = `<div class="meta"><span class="time">${fmtTime(elapsed())}</span><button type="button" class="lang" title="Wrong language? Click to switch EN ⇄ ES">${lang.toUpperCase()}</button>${tags.map((t) => `<span class="tag ${t}">${DOM_LABEL[t]}</span>`).join("")}</div>`
       + (lang === "en" ? origCell + xlCell : xlCell + origCell);
     withStableScroll(() => {
-      tr.appendChild(row);
+      if (opts.replace && opts.replace.isConnected) opts.replace.replaceWith(row);
+      else tr.appendChild(row);
       while (tr.children.length > 400) tr.firstChild.remove();
     });
-    if (!pinned) { unseenRows++; updateJump(); }
+    if (!pinned && !opts.replace) { unseenRows++; updateJump(); }
+    if (opts.refined) { const o = row.querySelector(".cell.orig"); o.classList.add("refined", "flash"); setTimeout(() => o.classList.remove("flash"), 900); }
     clearInterim();
     fillTranslation(row, text, lang);
 
-    // corrección con Whisper (si está listo)
-    if (audio && audio.length > 8000 && cfg.precise && aiReady && getAi()) {
+    // corrección con Whisper: en Max todas las frases; en Balanced solo las que el motor rápido no entendió bien
+    const needs = P().whisper === "all" || (P().whisper === "low" && (conf === undefined || conf === null || conf < LOW_CONF || opts.ambiguous));
+    if (needs && audio && audio.length > 8000 && cfg.precise && aiReady && getAi()) {
       const id = ++aiSeq;
       aiJobs.set(id, { row, text, lang, terms: new Set(a.terms) });
       row.classList.add("refining");
       row._audio = audio.slice();   // copia (últimas 30 frases) para poder re-transcribir si se corrige el idioma
       const withAudio = [...tr.querySelectorAll(".trow")].filter((r) => r._audio);
       while (withAudio.length > 30) withAudio.shift()._audio = null;
-      ai.postMessage({ type: "asr", id, lang, audio, conf: conf || 0 }, [audio.buffer]);
+      // en modo Auto, Whisper confirma el idioma si la decisión fue dudosa (o siempre, en perfil Max)
+      const detect = !!opts.auto && (opts.ambiguous || P().whisper === "all");
+      ai.postMessage({ type: "asr", id, lang, audio, conf: conf || 0, detect }, [audio.buffer]);
     }
 
     session.recent.push(a); if (session.recent.length > 3) session.recent.shift();
+    updatePriority(a, kr.items || []);   // Routine / Important / Urgent
     renderSuggestions(contextSuggestions(a));
     renderMeter(); renderTerms(); renderKeys(); renderStrip();
   }
+  // ───────────────── Importancia de la llamada ─────────────────
+  const PRIORITY = [
+    { lvl: 3, re: /\b(911|emergenc\w*|chest pain|dolor (de|en el) pecho|can'?t breathe|not breathing|no (puedo|puede) respirar|unconscious|inconsciente|bleeding|sangrando|overdose|sobredosis|suicid\w*|kill (myself|himself|herself)|quitarme la vida|dutch act|stroke|derrame|heart attack|infarto|ataque al corazon|gas leak|fuga de gas|huele a gas|fire|incendio|assault\w*|abus\w*|threat\w*|amenaz\w*|weapon|arma|pass(ed)? out|desmay\w*|seizure|convulsi\w*)\b/, why: "Possible emergency" },
+    { lvl: 2, re: /\b(fraud|fraude|unauthori[sz]ed|no reconozco|stolen|robad\w*|identity theft|robo de identidad|accident\w*|choque|chocaron|injur\w*|lesionad\w*|herid\w*|arrest\w*|detenid\w*|court|corte|hearing|audiencia|lawsuit|demanda|deadline|fecha limite|eviction|desalojo|foreclosure|embargo|collections|cobranza|denied|denegad\w*|cancel\w*|complaint|queja|supervisor|pain|dolor|pregnan\w*|embarazad\w*|medication|medicamento|deportation|deportacion|custody|custodia)\b/, why: "Important matter" },
+  ];
+  function updatePriority(a, keyItems) {
+    const p = session.priority || (session.priority = { lvl: 1, reasons: new Map() });
+    for (const r of PRIORITY) {
+      const m = a.n.match(r.re);
+      if (m) { p.lvl = Math.max(p.lvl, r.lvl); p.reasons.set(m[0], r.lvl); }
+    }
+    if (keyItems.some((k) => k.sensitive)) { p.lvl = Math.max(p.lvl, 2); p.reasons.set("sensitive data", 2); }
+    renderPriority();
+  }
+  function renderPriority() {
+    const el = $("prio");
+    const p = session && session.priority;
+    const lvl = p ? p.lvl : 0;
+    el.className = "prio " + (["", "routine", "important", "urgent"][lvl] || "");
+    el.textContent = ["", "Routine", "Important", "Urgent"][lvl] || "";
+    el.hidden = !lvl;
+    el.title = p && p.reasons.size ? "Why: " + [...p.reasons.keys()].slice(-6).join(", ") : "No urgent signals so far";
+  }
+
+  /** Fila atenuada para audio poco claro. Si Whisper la entiende, se reemplaza por una frase normal. */
+  function addUnclearRow(text, lang, audio, conf) {
+    const tr = $("transcript");
+    if (session.count === 0) tr.innerHTML = "";
+    session.count++;
+    const row = document.createElement("div");
+    row.className = "trow unclear";
+    row._lang = lang; row._text = text;
+    const canCheck = audio && audio.length > 8000 && cfg.precise && aiReady && getAi();
+    row.innerHTML = `<div class="meta"><span class="time">${fmtTime(elapsed())}</span><span class="tag unclear-tag">${canCheck ? "Unclear audio · checking" : "Unclear audio"}</span></div>`
+      + `<div class="cell unclear-text" title="Low confidence (${Math.round(conf * 100)}%) — the audio may be noisy, music, or another language">${esc(text)}</div>`;
+    withStableScroll(() => { tr.appendChild(row); while (tr.children.length > 400) tr.firstChild.remove(); });
+    clearInterim();
+    if (canCheck) {
+      const id = ++aiSeq;
+      aiJobs.set(id, { row, text, lang, terms: new Set(), unclear: true });
+      row._audio = audio.slice();
+      ai.postMessage({ type: "asr", id, lang, audio, conf: 0, detect: cfg.lang === "auto" }, [audio.buffer]);
+    }
+  }
+
   /** Sugerencias de la última frase primero, completadas con el contexto de las 2 anteriores. */
   function contextSuggestions(a) {
     const out = suggestionsFor(a);
@@ -545,7 +681,7 @@
   function renderStrip() {
     const box = $("ctxStrip");
     if (!session) { box.innerHTML = ""; return; }
-    const keys = session.keys.filter((k) => !k.hidden && k.type !== "number").map((k) => ({ t: k.t, html: `<button type="button" class="chip key-chip ${k.check ? "check" : ""}" data-copy="${esc(k.value)}" title="${esc(k.label)} — click to copy"><b>${KEY_ICON[k.type] || "•"} ${esc(k.label)}</b> ${esc(keyValueShown(k))}</button>` }));
+    const keys = session.keys.filter((k) => !k.hidden && k.type !== "number").map((k) => ({ t: k.t, html: `<button type="button" class="chip key-chip ${k.check ? "check" : ""}" data-copy="${esc(k.value)}" title="${esc(k.label)} — click to copy"><b>${esc(k.label)}</b> ${esc(keyValueShown(k))}</button>` }));
     const terms = [...session.termsSeen.entries()].map(([e, v]) => ({ t: v.t, html: `<button type="button" class="chip term-chip ${e.dom}" data-copy="${esc(e.tr)}" title="${esc(e.d || "")}"><b>${esc(e.t)}</b> ${esc(String(e.tr || "").split(",")[0])}</button>` }));
     const all = keys.concat(terms).sort((x, y) => y.t - x.t).slice(0, 14);
     box.innerHTML = all.map((x) => x.html).join("");
@@ -581,10 +717,14 @@
       if (a.terms.length || s.length > 1 || a.question) renderSuggestions(s);
       // traducción en vivo: una a la vez, siempre con el texto más reciente
       if (cfg.translate) { interimPending = { text, lang, seq: interimSeq }; pumpInterimTr(); }
-    }, 40);
+    }, P().interimMs);
   }
+  let lastInterimTr = 0, interimTrTimer = null;
   async function pumpInterimTr() {
     if (interimTrBusy || !interimPending) return;
+    const wait = P().interimTrMs - (performance.now() - lastInterimTr);   // límite de traducciones en vivo por segundo
+    if (wait > 0) { clearTimeout(interimTrTimer); interimTrTimer = setTimeout(pumpInterimTr, wait); return; }
+    lastInterimTr = performance.now();
     interimTrBusy = true;
     const job = interimPending; interimPending = null;
     const t = await translate(job.text, job.lang);
@@ -627,7 +767,7 @@
     const shown = q ? cards.filter((c) => strip(`${c.titulo} ${c.en || ""} ${c.es || ""} ${c.cat}`).includes(q)) : cards.filter((c) => c.cat === activeCat);
     $("cards").innerHTML = shown.length ? shown.map((c) => `
       <div class="card" tabindex="0">${c._custom !== undefined ? `<button type="button" class="del" data-del="${c._custom}" title="Delete card">×</button>` : ""}
-        <div class="title">${q ? `<span class="cat">${esc(c.cat)}</span> ` : ""}${esc(c.titulo)}${c.claves ? ` <span class="keys" title="Shows up as a suggestion when heard: ${esc(c.claves)}">⚡</span>` : ""}</div>
+        <div class="title">${q ? `<span class="cat">${esc(c.cat)}</span> ` : ""}${esc(c.titulo)}${c.claves ? ` <span class="keys" title="Shows up as a suggestion when heard: ${esc(c.claves)}">auto</span>` : ""}</div>
         <div class="pri" data-copy="${esc(fill(c[p1] || c[p2]))}">${esc(fill(c[p1] || c[p2]))}</div>
         ${c[p1] && c[p2] ? `<div class="sec" data-copy="${esc(fill(c[p2]))}">${esc(fill(c[p2]))}</div>` : ""}</div>`).join("") : `<p class="empty">No cards match “${esc(cardQuery)}”.</p>`;
     $("cardCats").innerHTML = cats.map((c) => `<option value="${esc(c)}">`).join("");
@@ -669,7 +809,9 @@
     $("btnStart").disabled = s !== "idle";
     $("btnPause").disabled = s === "idle";
     $("btnStop").disabled = s === "idle";
-    $("btnPause").textContent = s === "paused" ? "▶ Resume" : "❚❚ Pause";
+    $("btnPause").innerHTML = s === "paused"
+      ? '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg><span>Resume</span>'
+      : '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"/><rect x="14" y="4.5" width="4" height="15" rx="1"/></svg><span>Pause</span>';
     $("selSource").disabled = s !== "idle";
     $("selEngine").disabled = s !== "idle";
   }
@@ -796,16 +938,19 @@
     };
     // Modo auto: ambos modelos escuchan; en cada frase gana el que tenga más confianza.
     const decide = () => {
+      clearTimeout(v.decideTimer); v.awaiting = null;
       const seg = v.seg; v.seg = null;
-      if (!seg || gen !== voskGen) return;
-      let best = null, bestScore = -1;
+      if (!seg || gen !== voskGen || (!seg.es.length && !seg.en.length)) return;
+      let best = null, bestScore = -1; const scores = {};
       for (const lg of langs) {
         const w = seg[lg] || [];
-        if (!w.length) continue;
+        if (!w.length) { scores[lg] = 0; continue; }
         const avg = w.reduce((t, x) => t + (x.conf || 0), 0) / w.length;
         const score = avg + (lg === lastLang ? 0.03 : 0) + Math.min(w.length, 4) * 0.005;
+        scores[lg] = score;
         if (score > bestScore) { bestScore = score; best = lg; }
       }
+      const ambiguous = langs.length > 1 && Math.abs((scores.es || 0) - (scores.en || 0)) < 0.15;
       if (!best) return;
       // fragmentos muy cortos: se mantiene el último idioma salvo que el otro sea claramente mejor
       if (best !== lastLang && (seg[lastLang] || []).length && seg[best].length <= 3) {
@@ -815,9 +960,10 @@
       // descarta ruido: 1–2 palabras con baja confianza
       const bw = seg[best], bavg = bw.reduce((t, x) => t + (x.conf || 0), 0) / bw.length;
       if (bw.length <= 2 && bavg < 0.8) return;
+      if (bavg < 0.4 && bw.length < 6) return;   // ruido o música en ambos idiomas
       lastLang = best;
       handleInterim("");
-      handleFinal(seg[best].map((x) => x.word).join(" "), best, takeAudio(), bavg);
+      handleFinal(seg[best].map((x) => x.word).join(" "), best, takeAudio(), bavg, { ambiguous, auto: true });
     };
     for (let i = 0; i < models.length; i++) {
       const lg = langs[i];
@@ -827,14 +973,20 @@
         if (gen !== voskGen) return;
         v.partial[lg] = "";
         const res = m.result || {};
-        if (!res.text) { if (!auto && !v.partialText) { v.chunks = []; v.samples = 0; } return; }
+        if (!res.text) {
+          if (!auto && !v.partialText) { v.chunks = []; v.samples = 0; }
+          if (auto && v.awaiting) { v.awaiting.delete(lg); if (!v.awaiting.size) decide(); }
+          return;
+        }
         if (!auto) {
           const w = res.result || [];
           const conf = w.length ? w.reduce((t, x) => t + (x.conf || 0), 0) / w.length : 0;
           handleInterim(""); handleFinal(res.text, lg, takeAudio(), conf); return;
         }
-        if (!v.seg) { v.seg = { es: [], en: [] }; setTimeout(decide, 450); }
+        if (!v.seg) v.seg = { es: [], en: [] };
         v.seg[lg].push(...(res.result || res.text.split(" ").map((w) => ({ word: w, conf: 0.5 }))));
+        if (v.awaiting) { v.awaiting.delete(lg); if (!v.awaiting.size) decide(); }
+        else { clearTimeout(v.decideTimer); v.decideTimer = setTimeout(() => { if (!v.awaiting) flush(); }, 1200); }  // cierre propio de un modelo: pide al otro que cierre también
       });
       r.on("partialresult", (m) => {
         if (gen !== voskGen) return;
@@ -847,7 +999,15 @@
       });
       v.recs.push(r);
     }
-    const flush = () => { v.recs.forEach((r) => r.retrieveFinalResult()); v.partialText = ""; v.partialAt = 0; };
+    const flush = () => {
+      if (auto) {
+        if (v.awaiting) return;   // ya se pidió el cierre; esperando a ambos modelos
+        v.awaiting = new Set(langs);
+        clearTimeout(v.decideTimer);
+        v.decideTimer = setTimeout(decide, 2500);   // por si un modelo no responde
+      }
+      v.recs.forEach((r) => r.retrieveFinalResult()); v.partialText = ""; v.partialAt = 0;
+    };
     const proc = audioCtx.createScriptProcessor(rate <= 16000 ? 1024 : 2048, 1, 1);
     proc.onaudioprocess = (e) => {
       if (state !== "running" || gen !== voskGen) return;
@@ -867,7 +1027,7 @@
       if (speech) { v.speaking = true; v.silentSince = 0; }
       else if (v.speaking) {
         if (!v.silentSince) v.silentSince = now;
-        else if (now - v.silentSince > SILENCE_MS) { v.speaking = false; v.silentSince = 0; if (v.partialText) flush(); }
+        else if (now - v.silentSince > SILENCE_MS) { v.speaking = false; v.silentSince = 0; if (v.partialText || (v.seg && (v.seg.es.length || v.seg.en.length))) flush(); }
       }
       if (v.partialText && v.partialAt && now - v.partialAt > STABLE_MS) flush();
     };
@@ -1028,7 +1188,7 @@
   }
 
   function wipe() {
-    $("ctxStrip").innerHTML = "";
+    $("ctxStrip").innerHTML = ""; $("prio").hidden = true;
     pinned = true; unseenRows = 0; updateJump();
     session = null; t0 = 0; pausedMs = 0;
     $("transcript").innerHTML = `<p class="empty">Call ended. All content was erased.</p>`;
@@ -1114,6 +1274,21 @@
       });
     };
     // tarjetas propias
+    const renderMyTerms = () => {
+      $("myTermsList").innerHTML = myTerms.length ? myTerms.map((m, i) => `<div class="myterm"><span><b>${esc(m.en)}</b> → ${esc(m.es)}</span><button type="button" data-i="${i}" title="Delete">×</button></div>`).join("") : `<p class="hint">No terms yet.</p>`;
+    };
+    $("btnAddTerm").onclick = () => { $("termForm").reset(); $("termInfo").textContent = ""; renderMyTerms(); $("dlgTerm").showModal(); };
+    $("btnSaveTerm").onclick = () => {
+      const en = $("termEn").value.trim(), es = $("termEs").value.trim();
+      if (!en || !es) { $("termInfo").textContent = "Write the English term and your preferred Spanish translation."; return; }
+      myTerms = myTerms.filter((m) => strip(m.en) !== strip(en)).concat([{ en, es, note: $("termNote").value.trim(), dom: $("termDom").value }]);
+      store.set("inturp.myterms", myTerms); loadGlossary(); renderMyTerms();
+      $("termForm").reset(); $("termInfo").textContent = `Saved: ${en} → ${es}`;
+    };
+    $("myTermsList").onclick = (e) => {
+      const b = e.target.closest("button[data-i]"); if (!b) return;
+      myTerms.splice(+b.dataset.i, 1); store.set("inturp.myterms", myTerms); loadGlossary(); renderMyTerms();
+    };
     $("btnAddCard").onclick = () => { $("cardForm").reset(); $("cardCat").value = activeCat; $("cardInfo").textContent = ""; $("dlgCard").showModal(); };
     $("btnSaveCard").onclick = () => {
       const c = { cat: $("cardCat").value.trim() || "My cards", titulo: $("cardTitle").value.trim(), es: $("cardEs").value.trim(), en: $("cardEn").value.trim(), claves: $("cardKeys").value.trim() };
@@ -1190,6 +1365,9 @@
       if (!list.length) return;
       addToNotes(list.map(keyLine).join("\n")); toast("Key information added to notes");
     };
+    const perfText = () => { const d = detectPerf(); $("perfInfo").textContent = `This device: ${navigator.hardwareConcurrency || "?"} CPU cores${navigator.deviceMemory ? ", ~" + navigator.deviceMemory + " GB RAM" : ""} → ${cfg.perf === "auto" ? "using " + PERF[d].label : PERF[perfKey()].label + " (manual)"}. Lite skips the high-accuracy engine; Balanced only checks unclear sentences.`; };
+    $("cfgPerf").value = PERF[cfg.perf] ? cfg.perf : "auto"; perfText();
+    $("cfgPerf").onchange = (e) => { cfg.perf = e.target.value; saveCfg(); perfText(); if (P().whisper !== "off" && cfg.precise && state !== "idle") getAi(); };
     $("cfgMask").checked = cfg.mask;
     $("cfgMask").onchange = (e) => { cfg.mask = e.target.checked; saveCfg(); if (session) renderKeys(); };
     $("btnCopyNotes").onclick = () => $("notes").value.trim() && copy($("notes").value);
@@ -1241,5 +1419,5 @@
   renderCards();
   setState("idle");
   // Gancho mínimo para pruebas automáticas (no expone datos de llamadas).
-  window.__inturp = { analyze, suggestionsFor, parseGlossary, translate, getBergamot, handleFinal: (t) => { if (!session) session = freshSession(); handleFinal(t); }, wipe: () => { stop(true); wipe(); } };
+  window.__inturp = { analyze, suggestionsFor, parseGlossary, translate, getBergamot, handleFinalRaw: (t, l, c) => { if (!session) session = freshSession(); handleFinal(t, l, null, c); }, handleFinal: (t) => { if (!session) session = freshSession(); handleFinal(t); }, wipe: () => { stop(true); wipe(); } };
 })();
