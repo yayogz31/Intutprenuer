@@ -7,7 +7,7 @@
   const $ = (id) => document.getElementById(id);
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const DOMS = ["medico", "legal", "bancario", "seguros"];
-  const DOM_LABEL = { medico: "Médico", legal: "Legal", bancario: "Bancario", seguros: "Seguros", duda: "Duda", general: "General" };
+  const DOM_LABEL = { medico: "Médico", legal: "Legal", bancario: "Bancario", seguros: "Seguros", duda: "Duda", general: "General", aviso: "Disclosure", tarjeta: "Tarjeta" };
   const TAB_FOR_DOM = { medico: "Médico", legal: "Legal", bancario: "Bancario", seguros: "Seguros" };
 
   // ───────────────── Utilidades ─────────────────
@@ -30,9 +30,9 @@
     del(k) { try { localStorage.removeItem(k); } catch { /* */ } },
   };
   let toastT;
-  function toast(msg) {
+  function toast(msg, ms) {
     const t = $("toast"); t.textContent = msg; t.hidden = false;
-    clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), 1300);
+    clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), ms || 1300);
   }
   function notice(msg, isErr) {
     const n = $("notice");
@@ -49,7 +49,7 @@
   }
 
   // ───────────────── Configuración (solo preferencias, nunca texto de llamadas) ─────────────────
-  const cfg = Object.assign({ name: "", id: "", local: false, lang: "es-MX", source: "mic", engine: "vosk" }, store.get("inturp.cfg", {}));
+  const cfg = Object.assign({ name: "", id: "", local: false, lang: "es-MX", source: "mic", engine: "vosk", translate: true }, store.get("inturp.cfg", {}));
   const saveCfg = () => store.set("inturp.cfg", cfg);
 
   // ───────────────── Glosario e índice de términos ─────────────────
@@ -163,6 +163,9 @@
       r.re.lastIndex = 0;
       if (r.re.test(a.n)) for (const s of r.s) push(s, r.dom);
     }
+    for (const c of allCards()) {
+      if (c._re && (c._re.lastIndex = 0, c._re.test(a.n))) push({ es: fill(c.es), en: fill(c.en), titulo: c.titulo }, c.cat === "Disclosures" ? "aviso" : "tarjeta");
+    }
     if (a.nums.length) {
       const v = a.nums[a.nums.length - 1];
       push({ es: `Para confirmar, ¿dijo ${v}?`, en: `Just to confirm, did you say ${v}?` }, "duda");
@@ -173,7 +176,9 @@
       const lead = leadDomain();
       for (const s of (window.SUGERENCIAS_DEFECTO || {})[lead || "general"] || []) push(s, lead || "general");
     }
-    return out.slice(0, 6);
+    // los avisos (disclosures) siempre primero
+    out.sort((x, y) => (y.dom === "aviso") - (x.dom === "aviso"));
+    return out.slice(0, 7);
   }
 
   // ───────────────── Estado de la sesión (solo memoria) ─────────────────
@@ -181,6 +186,7 @@
   const freshSession = () => ({
     acc: { medico: 0, legal: 0, bancario: 0, seguros: 0 },
     termsSeen: new Map(),   // entrada → contador
+    liveTerms: new Set(),   // términos ya contados en la frase en curso
     nums: new Set(),
     count: 0,
   });
@@ -198,7 +204,7 @@
     if (!list.length) return;
     box.innerHTML = list.map((s) => `
       <div class="sugg" data-es="${esc(s.es)}" data-en="${esc(s.en)}">
-        <span class="src tag ${s.dom}">${DOM_LABEL[s.dom] || s.dom}</span>
+        <span class="src tag ${s.dom}">${esc(s.titulo && s.dom === "tarjeta" ? s.titulo : (DOM_LABEL[s.dom] || s.dom))}</span>
         <div class="es">${esc(s.es)}</div><div class="en">${esc(s.en)}</div>
       </div>`).join("");
   }
@@ -228,15 +234,55 @@
     $("quickData").innerHTML = [...session.nums].slice(-12).map((v) => `<button type="button" data-v="${esc(v)}">${esc(v)}</button>`).join("");
   }
 
-  /** Procesa una frase final. */
-  function handleFinal(text) {
+  // ───────────────── Traducción (traductor integrado del navegador, en el dispositivo) ─────────────────
+  // Usa la API "Translator" de Chrome (138+): corre localmente, sin internet ni API keys, y es muy rápida.
+  const translators = {};
+  const hasTranslator = () => "Translator" in self;
+  function getTranslator(from, to) {
+    const k = from + ">" + to;
+    if (!translators[k]) {
+      translators[k] = (async () => {
+        const av = await Promise.race([
+          self.Translator.availability({ sourceLanguage: from, targetLanguage: to }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 4000)),
+        ]);
+        if (av === "unavailable") return null;
+        return self.Translator.create({
+          sourceLanguage: from, targetLanguage: to,
+          monitor(m) { m.addEventListener("downloadprogress", (e) => { if (e.loaded < 1) notice(`Preparando el traductor (${from.toUpperCase()}→${to.toUpperCase()}) por única vez… ${Math.round(e.loaded * 100)}%`); else notice(""); }); },
+        });
+      })().catch(() => { setTimeout(() => delete translators[k], 15000); return null; });
+    }
+    return translators[k];
+  }
+  /** Debe llamarse dentro de un clic: la primera vez el navegador descarga el modelo de traducción. */
+  function prepareTranslators() {
+    if (!cfg.translate || !hasTranslator()) return;
+    getTranslator("es", "en"); getTranslator("en", "es");
+  }
+  async function translate(text, from) {
+    if (!cfg.translate || !hasTranslator() || !text) return null;
+    const t = await getTranslator(from, from === "es" ? "en" : "es");
+    if (!t) return null;
+    try { return await t.translate(text); } catch { return null; }
+  }
+  const langOf = () => (cfg.lang.startsWith("en") ? "en" : "es");
+
+  /** Procesa una frase final. lang = "es" | "en" (idioma en que se dijo). */
+  function handleFinal(text, lang) {
     text = text.trim();
     if (!text || !session) return;
+    lang = lang || langOf();
     const a = analyze(text);
     session.count++;
     for (const d of DOMS) session.acc[d] = session.acc[d] * 0.8 + a.score[d];
     const now = Date.now();
-    for (const e of a.terms) { const v = session.termsSeen.get(e) || { n: 0, t: 0 }; v.n++; v.t = now; session.termsSeen.set(e, v); }
+    for (const e of a.terms) {
+      const v = session.termsSeen.get(e) || { n: 0, t: 0 };
+      if (!session.liveTerms.has(e)) v.n++;   // ya contado mientras se hablaba
+      v.t = now; session.termsSeen.set(e, v);
+    }
+    session.liveTerms.clear();
     for (const v of a.nums) { session.nums.delete(v); session.nums.add(v); }
 
     const tr = $("transcript");
@@ -244,39 +290,98 @@
     const p = document.createElement("div");
     const tags = [...a.doms, ...(a.question ? ["duda"] : [])];
     p.className = "phrase " + (a.doms[0] || "");
-    p.innerHTML = `<span class="time">${fmtTime(elapsed())}</span><span class="tags">${tags.map((t) => `<span class="tag ${t}">${DOM_LABEL[t]}</span>`).join("")}</span>${a.html}`;
+    p.innerHTML = `<span class="time">${fmtTime(elapsed())}</span><span class="lang">${lang.toUpperCase()}</span><span class="tags">${tags.map((t) => `<span class="tag ${t}">${DOM_LABEL[t]}</span>`).join("")}</span>${a.html}`;
     tr.appendChild(p);
     while (tr.children.length > 300) tr.firstChild.remove();
     tr.scrollTop = tr.scrollHeight;
+    $("interimTr").textContent = "";
+
+    if (cfg.translate && hasTranslator()) {
+      translate(text, lang).then((t) => {
+        if (!t || !p.isConnected) return;
+        const x = document.createElement("div"); x.className = "xl"; x.textContent = t; p.appendChild(x);
+        const near = tr.scrollHeight - tr.scrollTop - tr.clientHeight < 120;
+        if (near) tr.scrollTop = tr.scrollHeight;
+      });
+    }
 
     renderSuggestions(suggestionsFor(a));
     renderMeter(); renderTerms(); renderChips();
   }
 
-  let interimT;
-  function handleInterim(text) {
+  let interimT, interimTrT, interimSeq = 0;
+  function handleInterim(text, lang) {
     const box = $("interim");
-    if (!text) { box.textContent = ""; return; }
+    if (!text) { box.textContent = ""; clearTimeout(interimTrT); return; }
+    lang = lang || langOf();
     clearTimeout(interimT);
     interimT = setTimeout(() => {
+      if (!session) return;
       const a = analyze(text);
-      box.innerHTML = a.html + " …";
+      box.innerHTML = `<span class="lang">${lang.toUpperCase()}</span>` + a.html + " …";
+      // términos y sugerencias en vivo, sin esperar a que termine la frase
+      let changed = false; const now = Date.now();
+      for (const e of a.terms) if (!session.liveTerms.has(e)) {
+        session.liveTerms.add(e); changed = true;
+        const v = session.termsSeen.get(e) || { n: 0, t: 0 }; v.n++; v.t = now; session.termsSeen.set(e, v);
+      }
+      if (changed) renderTerms();
       const s = suggestionsFor(a);
-      if (a.terms.length || s.length > 1 || a.question) renderSuggestions(s);   // respuesta inmediata mientras hablan
-    }, 60);
+      if (a.terms.length || s.length > 1 || a.question) renderSuggestions(s);
+    }, 40);
+    if (cfg.translate && hasTranslator()) {
+      clearTimeout(interimTrT);
+      const seq = ++interimSeq;
+      interimTrT = setTimeout(() => translate(text, lang).then((t) => { if (t && seq === interimSeq && $("interim").textContent) $("interimTr").textContent = t; }), 250);
+    }
   }
 
   // ───────────────── Tarjetas ─────────────────
+  // Tarjetas base (data/tarjetas.js) + tarjetas propias (guardadas solo en este navegador).
+  // "claves": palabras que, al escucharse, muestran la tarjeta como sugerencia.
   let activeCat = "Introducción";
-  const fill = (s) => s.replace(/\{nombre\}/g, cfg.name || "___").replace(/\{id\}/g, cfg.id || "___");
+  let customCards = store.get("inturp.cards", []);
+  let cardsCache = null;
+  const fill = (s) => String(s || "").replace(/\{nombre\}/g, cfg.name || "___").replace(/\{id\}/g, cfg.id || "___");
+  function compileKeys(c) {
+    const keys = String(c.claves || "").split(/[,;|]/).map((k) => strip(k).trim()).filter((k) => k.length >= 2);
+    c._re = keys.length ? new RegExp(`(?<![\\p{L}\\p{N}])(${keys.map(reEsc).join("|")})(?![\\p{L}\\p{N}])`, "u") : null;
+    return c;
+  }
+  function allCards() {
+    if (!cardsCache) cardsCache = (window.TARJETAS || []).map((c) => compileKeys({ ...c })).concat(customCards.map((c, i) => compileKeys({ ...c, _custom: i })));
+    return cardsCache;
+  }
+  function saveCustomCards() { store.set("inturp.cards", customCards); cardsCache = null; renderCards(); }
   function renderCards() {
-    const cats = [...new Set((window.TARJETAS || []).map((c) => c.cat))];
+    const cards = allCards();
+    const cats = [...new Set(cards.map((c) => c.cat))];
+    if (!cats.includes(activeCat)) activeCat = cats[0];
     $("cardTabs").innerHTML = cats.map((c) => `<button type="button" data-cat="${esc(c)}" class="${c === activeCat ? "on" : ""}">${esc(c)}</button>`).join("");
-    $("cards").innerHTML = (window.TARJETAS || []).filter((c) => c.cat === activeCat).map((c) => `
-      <div class="card"><div class="title">${esc(c.titulo)}</div>
+    $("cards").innerHTML = cards.filter((c) => c.cat === activeCat).map((c) => `
+      <div class="card">${c._custom !== undefined ? `<button type="button" class="del" data-del="${c._custom}" title="Eliminar tarjeta">×</button>` : ""}
+        <div class="title">${esc(c.titulo)}${c.claves ? ` <span class="keys" title="Aparece como sugerencia al escuchar: ${esc(c.claves)}">⚡</span>` : ""}</div>
         <div class="es" data-copy="${esc(fill(c.es))}">${esc(fill(c.es))}</div>
-        <div class="en" data-copy="${esc(fill(c.en))}">${esc(fill(c.en))}</div></div>`).join("");
+        ${c.en ? `<div class="en" data-copy="${esc(fill(c.en))}">${esc(fill(c.en))}</div>` : ""}</div>`).join("");
+    $("cardCats").innerHTML = cats.map((c) => `<option value="${esc(c)}">`).join("");
     if (session) renderMeter();
+  }
+  function parseCardsCSV(text) {
+    const lines = text.trim().split(/\r?\n/).filter((l) => l.trim());
+    if (!lines.length) return [];
+    const first = lines[0];
+    const sep = [["\t", (first.match(/\t/g) || []).length], [";", (first.match(/;/g) || []).length], [",", (first.match(/,/g) || []).length]].sort((x, y) => y[1] - x[1])[0][0];
+    const rows = lines.map((l) => {
+      const out = []; let cur = "", q = false;
+      for (let i = 0; i < l.length; i++) {
+        const c = l[i];
+        if (c === '"') { if (q && l[i + 1] === '"') { cur += '"'; i++; } else q = !q; }
+        else if (c === sep && !q) { out.push(cur.trim()); cur = ""; } else cur += c;
+      }
+      out.push(cur.trim()); return out;
+    });
+    if (/^(categ|cat$|category)/.test(strip(rows[0][0] || ""))) rows.shift();
+    return rows.filter((r) => r[0] && r[2]).map((r) => ({ cat: r[0], titulo: r[1] || r[2].slice(0, 30), es: r[2], en: r[3] || "", claves: (r[4] || "").replace(/\|/g, ",") }));
   }
 
   // ───────────────── Captura de audio y reconocimiento ─────────────────
@@ -325,7 +430,7 @@
     // mezcla micrófono + sistema
     const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
     streams.push(mic);
-    audioCtx = new AudioContext();
+    audioCtx = makeCtx();
     const dest = audioCtx.createMediaStreamDestination();
     audioCtx.createMediaStreamSource(new MediaStream([sysTrack])).connect(dest);
     audioCtx.createMediaStreamSource(mic).connect(dest);
@@ -335,6 +440,9 @@
   // ── Motor local (Vosk) ──
   const voskModels = {};
   let vosk = null, voskGen = 0;
+  function makeCtx() {
+    try { return new AudioContext({ sampleRate: 16000, latencyHint: "interactive" }); } catch { return new AudioContext(); }
+  }
   function loadScript(src) {
     return new Promise((res, rej) => {
       const el = document.createElement("script");
@@ -342,9 +450,8 @@
       document.head.appendChild(el);
     });
   }
-  async function getVoskModel(lang) {
+  async function getVoskModel(k) {
     if (!window.Vosk) await loadScript("vendor/vosk.js");
-    const k = lang.startsWith("en") ? "en" : "es";
     if (!voskModels[k]) {
       const url = new URL(`models/${k}.tar.gz`, location.href).href;
       voskModels[k] = (async () => {
@@ -361,11 +468,19 @@
     }
     return voskModels[k];
   }
+
+  // Cierre de frase rápido: si hay 0.55 s de silencio (o el texto parcial no cambia en 1.1 s) se cierra la frase,
+  // en lugar de esperar los 1–2 s que usa el modelo por defecto.
+  const SILENCE_MS = 550, STABLE_MS = 1100;
+  let lastLang = "es";
+
   async function startVosk() {
     const gen = ++voskGen;
-    const slow = setTimeout(() => notice("Cargando el modelo de voz local (unos 40 MB, solo la primera vez)…"), 300);
-    let model;
-    try { model = await getVoskModel(cfg.lang); }
+    const auto = cfg.lang === "auto";
+    const langs = auto ? ["es", "en"] : [langOf()];
+    const slow = setTimeout(() => notice(`Cargando el motor de voz local${auto ? " (español + inglés)" : ""}… la primera vez descarga ~40 MB por idioma; después queda guardado.`), 300);
+    let models;
+    try { models = await Promise.all(langs.map(getVoskModel)); }
     catch (e) {
       clearTimeout(slow);
       if (gen === voskGen) forcePause(`No se pudo cargar el motor local (${(e && e.message) || e}). Revisa que la acción «Modelos de voz» de GitHub haya terminado, o cambia el motor a «Navegador».`);
@@ -374,27 +489,92 @@
     clearTimeout(slow);
     if (gen !== voskGen || state !== "running") return;
     notice("");
-    if (!audioCtx) audioCtx = new AudioContext();
+    if (!audioCtx) audioCtx = makeCtx();
     if (audioCtx.state === "suspended") { try { await audioCtx.resume(); } catch { /* */ } }
-    const r = new model.KaldiRecognizer(audioCtx.sampleRate);
-    r.on("result", (m) => {
-      if (gen !== voskGen) return;
-      const t = m.result && m.result.text;
+    const rate = audioCtx.sampleRate;
+
+    const v = { recs: [], partial: {}, partialAt: 0, partialText: "", seg: null, speaking: false, silentSince: 0, floor: 0.004 };
+    // Modo auto: ambos modelos escuchan; en cada frase gana el que tenga más confianza.
+    const decide = () => {
+      const seg = v.seg; v.seg = null;
+      if (!seg || gen !== voskGen) return;
+      let best = null, bestScore = -1;
+      for (const lg of langs) {
+        const w = seg[lg] || [];
+        if (!w.length) continue;
+        const avg = w.reduce((t, x) => t + (x.conf || 0), 0) / w.length;
+        const score = avg + (lg === lastLang ? 0.03 : 0) + Math.min(w.length, 4) * 0.005;
+        if (score > bestScore) { bestScore = score; best = lg; }
+      }
+      if (!best) return;
+      lastLang = best;
       handleInterim("");
-      if (t) handleFinal(t);
-    });
-    r.on("partialresult", (m) => { if (gen === voskGen) handleInterim((m.result && m.result.partial) || ""); });
+      handleFinal(seg[best].map((x) => x.word).join(" "), best);
+    };
+    for (let i = 0; i < models.length; i++) {
+      const lg = langs[i];
+      const r = new models[i].KaldiRecognizer(rate);
+      if (auto) r.setWords(true);
+      r.on("result", (m) => {
+        if (gen !== voskGen) return;
+        v.partial[lg] = "";
+        const res = m.result || {};
+        if (!res.text) return;
+        if (!auto) { handleInterim(""); handleFinal(res.text, lg); return; }
+        if (!v.seg) { v.seg = { es: [], en: [] }; setTimeout(decide, 450); }
+        v.seg[lg].push(...(res.result || res.text.split(" ").map((w) => ({ word: w, conf: 0.5 }))));
+      });
+      r.on("partialresult", (m) => {
+        if (gen !== voskGen) return;
+        const t = (m.result && m.result.partial) || "";
+        v.partial[lg] = t;
+        // en modo auto se muestra el parcial del último idioma detectado
+        const show = auto ? (v.partial[lastLang] || v.partial[lg]) : t;
+        const showLang = auto ? (v.partial[lastLang] ? lastLang : lg) : lg;
+        if (show !== v.partialText) { v.partialText = show; v.partialAt = performance.now(); handleInterim(show, showLang); }
+      });
+      v.recs.push(r);
+    }
+    const flush = () => { v.recs.forEach((r) => r.retrieveFinalResult()); v.partialText = ""; v.partialAt = 0; };
     const src = audioCtx.createMediaStreamSource(new MediaStream([track]));
-    const proc = audioCtx.createScriptProcessor(4096, 1, 1);
-    proc.onaudioprocess = (e) => { if (state === "running" && gen === voskGen) { try { r.acceptWaveform(e.inputBuffer); } catch { /* */ } } };
+    const proc = audioCtx.createScriptProcessor(rate <= 16000 ? 1024 : 2048, 1, 1);
+    proc.onaudioprocess = (e) => {
+      if (state !== "running" || gen !== voskGen) return;
+      const data = e.inputBuffer.getChannelData(0);
+      for (const r of v.recs) { try { r.acceptWaveformFloat(data, rate); } catch { /* */ } }
+      // detector de voz por energía con piso de ruido adaptativo
+      let sum = 0; for (let i = 0; i < data.length; i += 4) sum += data[i] * data[i];
+      const rms = Math.sqrt(sum / (data.length / 4));
+      const now = performance.now();
+      const speech = rms > Math.max(0.008, v.floor * 3);
+      if (!speech) v.floor = v.floor * 0.95 + rms * 0.05;
+      if (speech) { v.speaking = true; v.silentSince = 0; }
+      else if (v.speaking) {
+        if (!v.silentSince) v.silentSince = now;
+        else if (now - v.silentSince > SILENCE_MS) { v.speaking = false; v.silentSince = 0; if (v.partialText) flush(); }
+      }
+      if (v.partialText && v.partialAt && now - v.partialAt > STABLE_MS) flush();
+    };
     src.connect(proc); proc.connect(audioCtx.destination);
-    vosk = { r, src, proc };
+    v.src = src; v.proc = proc;
+    vosk = v;
   }
   function stopVosk() {
     voskGen++;
     if (!vosk) return;
-    try { vosk.proc.onaudioprocess = null; vosk.proc.disconnect(); vosk.src.disconnect(); vosk.r.remove(); } catch { /* */ }
+    try { vosk.proc.onaudioprocess = null; vosk.proc.disconnect(); vosk.src.disconnect(); vosk.recs.forEach((r) => r.remove()); } catch { /* */ }
     vosk = null;
+  }
+
+  /** Si el motor en línea falla, se pasa solo al motor local sin detener la llamada. */
+  async function fallbackToLocal(reason) {
+    stopRecognition();
+    cfg.engine = "vosk"; saveCfg(); $("selEngine").value = "vosk";
+    try {
+      if (!track) { track = await getAudioTrack(cfg.source === "mic" ? "mic" : cfg.source); }
+    } catch (e) { forcePause("No se pudo abrir el micrófono para el motor local."); return; }
+    toast(`${reason} Se cambió al motor local (sin internet).`, 6000);
+    if (state === "running") startVosk();
   }
 
   // ── Motor del navegador (Web Speech API) ──
@@ -418,7 +598,7 @@
 
   function makeRec(local) {
     const r = new SR();
-    r.lang = cfg.lang; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
+    r.lang = cfg.lang === "auto" ? "es-MX" : cfg.lang; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
     if (local && "processLocally" in r) r.processLocally = true;
     r.onresult = (e) => {
       errStreak = 0; netErr = 0;
@@ -433,14 +613,13 @@
     r.onerror = (e) => {
       if (e.error === "no-speech" || e.error === "aborted") return;
       const fatal = { "not-allowed": "Permiso de micrófono denegado. Actívalo en el candado de la barra de direcciones.",
-        "service-not-allowed": "Este navegador bloquea el servicio de voz en línea. Cambia el motor a «Local» en la barra superior.",
+        "service-not-allowed": null,
         "audio-capture": "No se encontró un dispositivo de audio.",
         "language-not-supported": "Idioma no soportado por el motor de voz del navegador." }[e.error];
       if (fatal) { forcePause(fatal); return; }
+      if (e.error === "service-not-allowed") { fallbackToLocal("Este navegador bloquea su servicio de voz en línea."); return; }
       errStreak++;
-      if (e.error === "network" && ++netErr >= 3) {
-        forcePause("El servicio de voz en línea del navegador no responde (error de red). Esto pasa en Brave/Opera/Chromium, con VPN o redes que lo bloquean. Usa el motor «Local (sin internet)».");
-      }
+      if (e.error === "network" && ++netErr >= 2) fallbackToLocal("El servicio de voz en línea del navegador no responde (error de red).");
     };
     r.onend = () => {
       if (rec !== r) return;
@@ -458,13 +637,14 @@
         catch (err) {
           trackSupported = false;
           rec = makeRec(localOK); rec.start();
-          notice("El motor del navegador no puede escuchar el audio del sistema; está usando el micrófono. Para YouTube/sistema usa el motor «Local».", true);
+          fallbackToLocal("El motor del navegador no puede escuchar esa fuente de audio.");
+          return;
         }
       } else rec.start();
     } catch (err) { /* ya iniciado */ }
   }
 
-  function startRecognition() { return cfg.engine === "vosk" ? startVosk() : startBrowser(); }
+  function startRecognition() { return cfg.engine === "vosk" || cfg.lang === "auto" ? startVosk() : startBrowser(); }
   function stopRecognition() {
     stopVosk();
     const r = rec; rec = null;
@@ -474,7 +654,8 @@
 
   async function start() {
     if (state !== "idle") return;
-    if (cfg.engine === "browser" && !SR) { notice("Este navegador no tiene reconocimiento de voz propio. Usa el motor «Local (sin internet)».", true); return; }
+    prepareTranslators();   // dentro del clic: el navegador puede necesitar descargar el traductor
+    if (cfg.engine === "browser" && (!SR || cfg.lang === "auto")) { cfg.engine = "vosk"; $("selEngine").value = "vosk"; saveCfg(); }
     if (cfg.engine === "vosk" && (!window.WebAssembly || !window.AudioContext)) { notice("Este navegador no soporta el motor local. Usa Chrome, Edge o Firefox actualizados.", true); return; }
     notice("");
     session = freshSession();
@@ -490,6 +671,10 @@
       return;
     }
     if (cfg.engine === "browser") localOK = await prepareLocal(cfg.lang);
+    if (cfg.translate && !hasTranslator() && !store.get("inturp.trWarned", false)) {
+      notice("Para ver la traducción en vivo usa Google Chrome 138 o más reciente (escritorio): trae un traductor integrado que funciona sin internet. Las sugerencias y tarjetas siguen siendo bilingües.");
+      store.set("inturp.trWarned", true);
+    }
     $("transcript").innerHTML = `<p class="empty">Escuchando…</p>`;
     t0 = Date.now(); pausedMs = 0;
     setState("running");
@@ -533,6 +718,7 @@
     session = null; t0 = 0; pausedMs = 0;
     $("transcript").innerHTML = `<p class="empty">Llamada terminada. Todo el contenido fue eliminado.</p>`;
     $("interim").textContent = "";
+    $("interimTr").textContent = "";
     $("suggestions").innerHTML = `<p class="empty">Aparecerán aquí según lo que se diga.</p>`;
     $("terms").innerHTML = `<p class="empty">Los términos de tu glosario aparecerán aquí al escucharse.</p>`;
     $("termCount").textContent = "0";
@@ -545,9 +731,14 @@
   }
 
   function swapLang() {
-    cfg.lang = cfg.lang.startsWith("es") ? "en-US" : (store.get("inturp.lastEs", "es-MX"));
+    cfg.lang = cfg.lang.startsWith("es") ? "en-US" : cfg.lang.startsWith("en") ? "auto" : store.get("inturp.lastEs", "es-MX");
+    applyLang();
+  }
+  function applyLang() {
     $("selLang").value = cfg.lang; saveCfg();
-    toast(cfg.lang.startsWith("es") ? "Escuchando: Español" : "Listening: English");
+    if (cfg.lang.startsWith("es")) store.set("inturp.lastEs", cfg.lang);
+    toast(cfg.lang === "auto" ? "Idioma: automático (ES + EN)" : cfg.lang.startsWith("es") ? "Escuchando: Español" : "Listening: English");
+    prepareTranslators();
     if (state === "running") { stopRecognition(); startRecognition(); }
   }
 
@@ -590,9 +781,25 @@
     $("btnPause").onclick = pause;
     $("btnStop").onclick = () => stop(false);
     $("btnSwap").onclick = swapLang;
-    $("selLang").onchange = (e) => {
-      cfg.lang = e.target.value; if (cfg.lang.startsWith("es")) store.set("inturp.lastEs", cfg.lang); saveCfg();
-      if (state === "running") { stopRecognition(); startRecognition(); }
+    $("selLang").onchange = (e) => { cfg.lang = e.target.value; applyLang(); };
+    $("cfgTranslate").checked = cfg.translate;
+    $("cfgTranslate").onchange = (e) => { cfg.translate = e.target.checked; saveCfg(); if (cfg.translate) prepareTranslators(); };
+    $("trInfo").textContent = hasTranslator()
+      ? "Tu navegador tiene traductor integrado: la traducción se hace en tu equipo, sin internet."
+      : "Tu navegador no tiene traductor integrado. Usa Google Chrome 138 o más reciente (escritorio).";
+
+    // tarjetas propias
+    $("btnAddCard").onclick = () => { $("cardForm").reset(); $("cardCat").value = activeCat; $("cardInfo").textContent = ""; $("dlgCard").showModal(); };
+    $("btnSaveCard").onclick = () => {
+      const c = { cat: $("cardCat").value.trim() || "Mis tarjetas", titulo: $("cardTitle").value.trim(), es: $("cardEs").value.trim(), en: $("cardEn").value.trim(), claves: $("cardKeys").value.trim() };
+      const bulk = $("cardBulk").value.trim();
+      const items = bulk ? parseCardsCSV(bulk) : (c.es ? [{ ...c, titulo: c.titulo || c.es.slice(0, 30) }] : []);
+      if (!items.length) { $("cardInfo").textContent = "Escribe al menos el texto en español (o pega filas CSV)."; return; }
+      customCards = customCards.concat(items);
+      activeCat = items[items.length - 1].cat;
+      saveCustomCards();
+      $("dlgCard").close();
+      toast(items.length > 1 ? `${items.length} tarjetas agregadas` : "Tarjeta agregada");
     };
     $("selSource").onchange = (e) => { cfg.source = e.target.value; saveCfg(); };
     $("selEngine").value = cfg.engine;
@@ -607,7 +814,11 @@
       copy(e.target.closest(".en") ? el.dataset.en : el.dataset.es);
     };
     $("cardTabs").onclick = (e) => { const b = e.target.closest("button"); if (b) { activeCat = b.dataset.cat; renderCards(); } };
-    $("cards").onclick = (e) => { const el = e.target.closest("[data-copy]") || e.target.closest(".card")?.querySelector(".es"); if (el) copy(el.dataset.copy); };
+    $("cards").onclick = (e) => {
+      const del = e.target.closest("[data-del]");
+      if (del) { if (confirm("¿Eliminar esta tarjeta?")) { customCards.splice(+del.dataset.del, 1); saveCustomCards(); } return; }
+      const el = e.target.closest("[data-copy]") || e.target.closest(".card")?.querySelector(".es"); if (el) copy(el.dataset.copy);
+    };
     $("quickData").onclick = (e) => {
       const b = e.target.closest("button"); if (!b) return;
       const n = $("notes"); n.value += (n.value && !n.value.endsWith("\n") ? "\n" : "") + b.dataset.v + " "; n.focus();
@@ -618,7 +829,7 @@
       e.preventDefault();
       const v = $("simInput").value; if (!v.trim()) return;
       if (!session) { session = freshSession(); if (!t0) { t0 = Date.now(); pausedMs = 0; } }
-      handleFinal(v); $("simInput").value = "";
+      handleFinal(v, cfg.lang === "auto" ? (/\b(the|and|my|is|you|i|to|of)\b/i.test(v) ? "en" : "es") : langOf()); $("simInput").value = "";
       $("btnStop").disabled = false;
     };
 

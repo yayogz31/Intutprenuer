@@ -10,14 +10,28 @@ Asistente web para intérpretes y agentes telefónicos. Escucha la llamada, tran
 
 Botones **Iniciar**, **Pausar/Reanudar** y **Terminar**. Atajos: `Alt+S`, `Alt+P`, `Alt+E`, `Alt+L` (cambiar ES ⇄ EN).
 
+## Idioma y traducción
+
+- **Auto (ES + EN):** escucha los dos idiomas a la vez y detecta el de cada frase (etiqueta ES/EN). No hay que cambiar nada a mano durante la llamada. Usa el motor local con los dos modelos cargados.
+- **Traducción en vivo:** cada frase se traduce al otro idioma, y también mientras la persona sigue hablando. Usa el **traductor integrado de Google Chrome 138 o más reciente** (escritorio), que corre en tu equipo, sin internet ni API keys. La primera vez Chrome descarga su modelo de traducción. Se puede apagar en ⚙ Ajustes. En otros navegadores no hay traducción, pero las sugerencias y tarjetas siguen siendo bilingües.
+- **ES ⇄ EN** (`Alt+L`) cambia entre Español → Inglés → Auto.
+
 ## Motores de voz
 
 | Motor | Ventajas | Notas |
 |---|---|---|
-| **Local (sin internet)** *(predeterminado)* | El audio nunca sale de tu equipo. Escucha **cualquier fuente**: micrófono, una pestaña (YouTube, Zoom web, softphone) o toda la pantalla con audio. No necesita la red, así que no da errores de red. | Usa [Vosk](https://alphacephei.com/vosk/) (WebAssembly, Apache-2.0). La primera vez descarga el modelo (~40 MB por idioma) y luego queda guardado en el navegador. Es menos preciso que el de Google, sobre todo con ruido, y escribe los números con letra. |
-| **Navegador (en línea)** | Muy preciso, con puntuación y números en cifra. | Solo funciona en Chrome o Edge. Envía el audio al servicio de Google o Microsoft. Falla con "error de red" en Brave, Opera o Chromium, con VPN o en redes que lo bloquean. Para audio del sistema depende de la versión de Chrome. |
+| **Local (sin internet)** *(predeterminado)* | El audio nunca sale de tu equipo. Escucha **cualquier fuente**: micrófono, una pestaña (YouTube, Zoom web, softphone) o toda la pantalla con audio. Permite el modo Auto ES + EN. | Usa [Vosk](https://alphacephei.com/vosk/) (WebAssembly, Apache-2.0). La primera vez descarga ~40 MB por idioma y luego queda guardado en el navegador. Cierra cada frase tras ~0.5 s de silencio. Es menos preciso que el de Google y escribe los números con letra. |
+| **Navegador (en línea)** | Muy preciso, con puntuación. | Solo Chrome o Edge, y envía el audio a Google o Microsoft. **Si da error de red o no puede oír la fuente, la app cambia sola al motor local** sin detener la llamada. |
 
-Los modelos del motor local los descarga automáticamente la acción **"Modelos de voz"** (`.github/workflows/modelos.yml`) en la carpeta `models/`. Si fallara, ve a **Actions → Modelos de voz → Run workflow**.
+Los modelos del motor local los descarga la acción **"Modelos de voz"** (`.github/workflows/modelos.yml`) en `models/`.
+
+## Tarjetas, disclosures y sugerencias por caso
+
+- La pestaña **Disclosures** trae avisos de grabación, confidencialidad, "todo se interpreta", sin opiniones, sin asesoría legal, HIPAA, Mini-Miranda de cobranza, declaración grabada, autorización de tercero, verificación de identidad, 911 y tercero que se une.
+- Las tarjetas pueden tener **palabras clave**. Cuando se escuchan en la llamada, la tarjeta aparece sola en **Sugerencias** (los disclosures, primero).
+- **+ Tarjeta** agrega tus propias tarjetas (categoría, título, español, inglés, palabras clave), una por una o varias a la vez en CSV:
+  `categoría;título;español;inglés;clave1|clave2`. Se guardan solo en tu navegador y se borran con la ×.
+- Para que sean de todos los usuarios, agrégalas en `data/tarjetas.js`.
 
 ## Fuente de audio
 

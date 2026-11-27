@@ -106,3 +106,16 @@ dialog::backdrop { background: rgba(0,0,0,.6); }
   .grid { grid-template-columns: 1fr; padding: 8px; }
   .panel { min-height: 40vh; }
 }
+
+/* idioma, traducción, avisos, tarjetas propias */
+.lang { font-size: 10px; font-weight: 800; color: var(--bg); background: var(--mut); border-radius: 4px; padding: 1px 5px; margin-right: 6px; vertical-align: 1px; }
+.xl { color: #9fd8ff; font-size: 14px; margin-top: 3px; padding-left: 8px; border-left: 2px solid rgba(76,194,255,.35); }
+.interim { font-size: 16px; }
+.interim.xl { font-style: normal; min-height: 0; }
+.interim.xl:empty { display: none; }
+.tag.aviso { background: #ffd166; } .tag.tarjeta { background: var(--acc); }
+.card { position: relative; }
+.card .del { position: absolute; top: 4px; right: 6px; background: none; border: 0; color: var(--mut); font-size: 16px; cursor: pointer; line-height: 1; }
+.card .del:hover { color: var(--bad); }
+.card .keys { color: #ffd166; }
+details summary { cursor: pointer; color: var(--acc); font-size: 13px; }

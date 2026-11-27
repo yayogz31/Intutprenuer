@@ -23,12 +23,13 @@
 
     <div class="controls">
       <select id="selLang" title="Idioma que se está escuchando">
+        <option value="auto">Auto (ES + EN)</option>
         <option value="es-MX">Español (MX)</option>
         <option value="es-US">Español (US)</option>
         <option value="es-ES">Español (ES)</option>
         <option value="en-US">English (US)</option>
       </select>
-      <button id="btnSwap" class="btn ghost" title="Cambiar idioma ES ⇄ EN al vuelo (Alt+L)">ES ⇄ EN</button>
+      <button id="btnSwap" class="btn ghost" title="Cambiar idioma: ES → EN → Auto (Alt+L)">ES ⇄ EN</button>
       <select id="selEngine" title="Motor de reconocimiento de voz">
         <option value="vosk">Motor local (sin internet)</option>
         <option value="browser">Motor del navegador (en línea)</option>
@@ -65,6 +66,7 @@
         <p class="empty">Presiona <b>Iniciar</b> para comenzar. Nada se guarda: al terminar se borra todo.</p>
       </div>
       <div id="interim" class="interim"></div>
+      <div id="interimTr" class="interim xl"></div>
       <form id="simForm" class="simform" autocomplete="off">
         <input id="simInput" type="text" placeholder="Probar sin audio: escribe una frase y Enter (p. ej. “no reconozco un cargo de 250 dólares”)">
       </form>
@@ -77,7 +79,7 @@
         <p class="empty">Aparecerán aquí según lo que se diga.</p>
       </div>
 
-      <div class="panel-head"><h2>Tarjetas</h2><small>clic = copiar</small></div>
+      <div class="panel-head"><h2>Tarjetas</h2><span><small>clic = copiar</small> <button id="btnAddCard" class="btn ghost tiny" title="Agregar tarjetas propias">+ Tarjeta</button></span></div>
       <div id="cardTabs" class="tabs"></div>
       <div id="cards" class="cards"></div>
     </section>
@@ -104,6 +106,8 @@
       <h2>Ajustes</h2>
       <label>Tu nombre (para tarjetas) <input id="cfgName" type="text"></label>
       <label>Tu ID de intérprete <input id="cfgId" type="text"></label>
+      <label class="row"><input id="cfgTranslate" type="checkbox"> Traducir en vivo (ES ⇄ EN)</label>
+      <p id="trInfo" class="hint"></p>
       <label class="row"><input id="cfgLocal" type="checkbox"> Motor del navegador: procesar en el dispositivo (si lo soporta)</label>
       <p id="localInfo" class="hint"></p>
 
@@ -119,6 +123,33 @@
       <p id="glossInfo" class="hint"></p>
       <p class="hint">Atajos: <b>Alt+S</b> iniciar · <b>Alt+P</b> pausar · <b>Alt+E</b> terminar · <b>Alt+L</b> cambiar idioma.</p>
       <div class="row end"><button class="btn start" value="close">Cerrar</button></div>
+    </form>
+  </dialog>
+
+  <!-- Nueva tarjeta -->
+  <dialog id="dlgCard">
+    <form id="cardForm" method="dialog" class="dlg">
+      <h2>Nueva tarjeta</h2>
+      <label>Categoría (pestaña) <input id="cardCat" type="text" list="cardCats" placeholder="p. ej. Disclosures, Médico, Mis frases"></label>
+      <datalist id="cardCats"></datalist>
+      <label>Título <input id="cardTitle" type="text" placeholder="p. ej. Aviso de grabación"></label>
+      <label>Texto en español <textarea id="cardEs" rows="3"></textarea></label>
+      <label>Texto en inglés <textarea id="cardEn" rows="3"></textarea></label>
+      <label>Palabras clave (opcional, separadas por coma)
+        <input id="cardKeys" type="text" placeholder="grabada, recorded, statement">
+      </label>
+      <p class="hint">Cuando alguna palabra clave se escuche en la llamada, la tarjeta aparecerá como sugerencia. Puedes usar {nombre} y {id}.</p>
+      <details>
+        <summary>Agregar varias a la vez (CSV)</summary>
+        <p class="hint">Una por línea: categoría;título;español;inglés;palabras clave (separa las claves con |)</p>
+        <textarea id="cardBulk" rows="4" placeholder="Disclosures;Grabación;Esta llamada puede ser grabada.;This call may be recorded.;grabada|recorded"></textarea>
+      </details>
+      <p id="cardInfo" class="hint"></p>
+      <p class="hint">Las tarjetas propias se guardan solo en este navegador.</p>
+      <div class="row end">
+        <button class="btn ghost" value="cancel" formnovalidate>Cancelar</button>
+        <button id="btnSaveCard" type="button" class="btn start">Guardar</button>
+      </div>
     </form>
   </dialog>
 

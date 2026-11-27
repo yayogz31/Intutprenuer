@@ -1,8 +1,48 @@
 /*
  * TARJETAS (frases listas para usar). {nombre} y {id} se reemplazan con tus datos de ⚙ Ajustes.
  * cat = categoría (pestaña). Puedes agregar/editar libremente.
+ * claves = (opcional) palabras separadas por coma; si se escuchan en la llamada, la tarjeta aparece como sugerencia.
+ *          Escríbelas sin acentos.
  */
 window.TARJETAS = [
+  // Disclosures (avisos) — aparecen como sugerencia cuando se escuchan sus palabras clave
+  { cat: "Disclosures", titulo: "Llamada grabada / monitoreada", claves: "grabada, grabando, grabacion, recorded, recording, monitored, monitoreada",
+    es: "Le informo que esta llamada puede ser grabada o monitoreada con fines de calidad y capacitación.",
+    en: "Please be advised that this call may be recorded or monitored for quality and training purposes." },
+  { cat: "Disclosures", titulo: "Confidencialidad del intérprete", claves: "confidencial, confidential, privado, private, nadie se va a enterar",
+    es: "Como intérprete, mantengo la confidencialidad de todo lo que se diga en esta llamada.",
+    en: "As the interpreter, I keep everything said during this call confidential." },
+  { cat: "Disclosures", titulo: "Todo se interpreta", claves: "no le diga, no interprete, no traduzca, entre nosotros, don't tell, don't interpret, between us, off the record",
+    es: "El intérprete le recuerda que todo lo que se diga durante la llamada será interpretado.",
+    en: "The interpreter reminds you that everything said during the call will be interpreted." },
+  { cat: "Disclosures", titulo: "Sin opiniones ni consejos", claves: "que opina, que me recomienda, que haria usted, usted que cree, what do you think, what would you do, your opinion",
+    es: "Como intérprete no puedo dar opiniones ni consejos; con gusto interpreto su pregunta.",
+    en: "As the interpreter I cannot give opinions or advice; I'll gladly interpret your question." },
+  { cat: "Disclosures", titulo: "No es asesoría legal", claves: "abogado, lawyer, attorney, consejo legal, legal advice, demandar, sue",
+    es: "El intérprete no puede dar asesoría legal. Para eso, consulte a un abogado.",
+    en: "The interpreter cannot provide legal advice. Please consult an attorney for that." },
+  { cat: "Disclosures", titulo: "Privacidad médica (HIPAA)", claves: "hipaa, privacidad, privacy, historial medico, expediente medico, medical records, medical history",
+    es: "Su información médica está protegida por las leyes de privacidad (HIPAA) y solo se usará para su atención.",
+    en: "Your medical information is protected by privacy laws (HIPAA) and will only be used for your care." },
+  { cat: "Disclosures", titulo: "Aviso de cobranza (Mini-Miranda)", claves: "cobranza, cobranzas, collections, deuda, debt, cobrar, collect, collector",
+    es: "Esta es una comunicación de un cobrador de deudas. Es un intento de cobrar una deuda y cualquier información obtenida se usará para ese propósito.",
+    en: "This is a communication from a debt collector. This is an attempt to collect a debt and any information obtained will be used for that purpose." },
+  { cat: "Disclosures", titulo: "Declaración grabada (consentimiento)", claves: "declaracion grabada, recorded statement",
+    es: "Esta declaración será grabada. ¿Me da su permiso para grabarla? Por favor diga su nombre completo y la fecha de hoy.",
+    en: "This statement will be recorded. Do I have your permission to record it? Please state your full name and today's date." },
+  { cat: "Disclosures", titulo: "Autorización de tercero", claves: "en su nombre, de parte de, mi hijo, mi hija, mi esposo, mi esposa, mi mama, on behalf, my son, my daughter, my wife, my husband, my mother",
+    es: "Para hablar con otra persona sobre su cuenta, necesito su autorización. ¿Autoriza que esta persona hable en su nombre?",
+    en: "To speak with someone else about your account, I need your authorization. Do you authorize this person to speak on your behalf?" },
+  { cat: "Disclosures", titulo: "Verificación de identidad", claves: "verificar, verify, identidad, identity, seguro social, social security, fecha de nacimiento, date of birth",
+    es: "Antes de continuar, necesito verificar su identidad por su seguridad.",
+    en: "Before we continue, I need to verify your identity for your security." },
+  { cat: "Disclosures", titulo: "Emergencia: llame al 911", claves: "emergencia, emergency, 911, me estoy muriendo, dying, no respira, not breathing",
+    es: "Si se trata de una emergencia, cuelgue y llame al 911 de inmediato.",
+    en: "If this is an emergency, please hang up and call 911 immediately." },
+  { cat: "Disclosures", titulo: "Tercero se une a la llamada", claves: "le transfiero, i will transfer you, conferencia, conference, otra persona en la linea, another person on the line",
+    es: "Para quien se une a la llamada: soy el intérprete y todo lo que se diga será interpretado.",
+    en: "For anyone joining the call: I am the interpreter and everything said will be interpreted." },
+
   // Introducción
   { cat: "Introducción", titulo: "Presentación (intérprete)",
     es: "Hola, mi nombre es {nombre}, intérprete número {id}. Hoy seré su intérprete. Todo lo que se diga será interpretado y se mantendrá confidencial.",
