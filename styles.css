@@ -123,3 +123,21 @@ details summary { cursor: pointer; color: var(--acc); font-size: 13px; }
 .seg button { background: var(--panel2); color: var(--mut); border: 0; padding: 4px 12px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
 .seg button.on { background: var(--ok); color: #04210f; }
 .seg button + button { border-left: 1px solid var(--line); }
+
+/* transcripción a dos columnas */
+.cols-head { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--mut); padding: 0 4px; }
+.trow { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; background: var(--panel2); border-left: 3px solid var(--gen); border-radius: 6px; padding: 5px 9px 7px; }
+.trow.medico { border-color: var(--med); } .trow.legal { border-color: var(--leg); } .trow.bancario { border-color: var(--ban); } .trow.seguros { border-color: var(--seg); }
+.trow .meta { grid-column: 1 / -1; display: flex; gap: 5px; align-items: center; }
+.trow .meta .tag { font-size: 9.5px; }
+.trow .cell { font-size: 15px; line-height: 1.4; min-width: 0; overflow-wrap: anywhere; }
+.trow .cell.orig { color: var(--tx); }
+.trow .cell.xl { color: #9fd8ff; border-left: 0; padding-left: 0; margin-top: 0; }
+.trow .cell.xl.pending::after { content: "…"; color: var(--mut); }
+.trow .cell.refined::after { content: " ✓"; color: var(--ok); font-size: 12px; }
+.trow.refining .cell.orig { opacity: .85; }
+.trow.interim { background: transparent; border-color: transparent; font-style: italic; min-height: 26px; padding-top: 2px; }
+.trow.interim:not(.on) { visibility: hidden; }
+.trow.interim .cell.orig { color: var(--mut); }
+@media (max-width: 700px) { .cols-head, .trow { grid-template-columns: 1fr; } }
+.trow .time { color: var(--mut); font-size: 11px; margin-right: 2px; }

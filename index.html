@@ -9,6 +9,7 @@
         content="default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
   <meta name="referrer" content="no-referrer">
   <title>Inturpreneur</title>
+  <script src="coi.js"></script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -62,11 +63,11 @@
           <span data-dom="seguros">Insurance <b>0%</b></span>
         </div>
       </div>
+      <div class="cols-head"><span>English</span><span>Español</span></div>
       <div id="transcript" class="transcript" aria-live="polite">
         <p class="empty">Press <b>Start</b> to begin. Nothing is saved: everything is erased when the call ends.</p>
       </div>
-      <div id="interim" class="interim"></div>
-      <div id="interimTr" class="interim xl"></div>
+      <div id="interim" class="trow interim"><div class="cell" data-l="en"></div><div class="cell" data-l="es"></div></div>
       <form id="simForm" class="simform" autocomplete="off">
         <input id="simInput" type="text" placeholder="Test without audio: type a sentence and press Enter (e.g. “I don't recognize a $250 charge”)">
       </form>
@@ -110,6 +111,8 @@
       <h2>Settings</h2>
       <label>Your name (for cards) <input id="cfgName" type="text"></label>
       <label>Your interpreter ID <input id="cfgId" type="text"></label>
+      <label class="row"><input id="cfgPrecise" type="checkbox"> High-accuracy transcript (Whisper, offline)</label>
+      <p class="hint">The fast engine shows text instantly; Whisper re-checks each sentence a moment later and corrects it (marked ✓). First use downloads ~100 MB, then it stays saved.</p>
       <label class="row"><input id="cfgTranslate" type="checkbox"> Live translation (EN ⇄ ES)</label>
       <p id="trInfo" class="hint"></p>
       <label class="row"><input id="cfgLocal" type="checkbox"> Browser engine: process on device (if supported)</label>

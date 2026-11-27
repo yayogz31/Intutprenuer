@@ -17,20 +17,37 @@ Botones **Iniciar**, **Pausar/Reanudar** y **Terminar**. Atajos: `Alt+S`, `Alt+P
   - **To Provider:** inglés grande, español abajo (para lo que le dices al proveedor o agente).
   - **To LEP:** español grande, inglés abajo (las mismas tarjetas, dirigidas a la persona LEP).
 
+## Transcripción a dos columnas
+
+La transcripción muestra **English a la izquierda y Español a la derecha**. Cada frase aparece en su columna y su traducción en la otra, en azul.
+
+## Precisión: dos motores locales trabajando juntos
+
+1. **Vosk (rápido):** muestra el texto al instante mientras se habla.
+2. **Whisper base (preciso):** al cerrarse cada frase, la vuelve a transcribir y la corrige un momento después (marca ✓), con puntuación y mayúsculas. Corre en un hilo aparte y usa varios núcleos del procesador gracias a `sw.js`. La primera vez descarga unos 100 MB y luego queda guardado. Se puede apagar en ⚙.
+
+Todo corre en tu equipo: sin API keys, sin tokens y sin enviar audio a ningún servidor.
+
+## Traducción offline en cualquier navegador
+
+- **Chrome 138+:** usa el traductor integrado de Chrome.
+- **Cualquier otro navegador (Firefox, Safari, Edge, Brave…):** usa **Bergamot**, el motor de traducción offline de Firefox, incluido en la página (unos 42 MB la primera vez; unos 30 ms por frase después).
+
 ## Navegadores compatibles
 
 | Función | Chrome / Edge | Firefox | Safari |
 |---|---|---|---|
-| Transcripción (motor local) | ✅ | ✅ | ✅ (micrófono) |
+| Transcripción rápida (Vosk) | ✅ | ✅ | ✅ (micrófono) |
+| Transcripción precisa (Whisper) | ✅ | ✅ | ✅ |
 | Audio de pestaña o sistema | ✅ | ✅ pestañas | ❌ (usa cable virtual) |
-| Modo Auto EN + ES | ✅ | ✅ | ✅ |
-| Traducción en vivo | ✅ Chrome 138+ | ❌ | ❌ |
-| Glosario, sugerencias, tarjetas, disclosures | ✅ | ✅ | ✅ |
+| Traducción en vivo | ✅ | ✅ (Bergamot) | ✅ (Bergamot) |
+
+Modelos y librerías incluidos: Vosk (Apache-2.0), Whisper base vía transformers.js (MIT / Apache-2.0), Bergamot (MPL-2.0). La acción **"Modelos de voz"** los descarga a `models/`.
 
 ## Idioma y traducción
 
 - **Auto (ES + EN):** escucha los dos idiomas a la vez y detecta el de cada frase (etiqueta ES/EN). No hay que cambiar nada a mano durante la llamada. Usa el motor local con los dos modelos cargados.
-- **Traducción en vivo:** cada frase se traduce al otro idioma, y también mientras la persona sigue hablando. Usa el **traductor integrado de Google Chrome 138 o más reciente** (escritorio), que corre en tu equipo, sin internet ni API keys. La primera vez Chrome descarga su modelo de traducción. Se puede apagar en ⚙ Ajustes. En otros navegadores no hay traducción, pero las sugerencias y tarjetas siguen siendo bilingües.
+- **Traducción en vivo:** cada frase se traduce al otro idioma, y también mientras la persona sigue hablando. Se puede apagar en ⚙ Settings.
 - **ES ⇄ EN** (`Alt+L`) cambia entre Español → Inglés → Auto.
 
 ## Motores de voz

@@ -49,7 +49,7 @@
   }
 
   // ───────────────── Configuración (solo preferencias, nunca texto de llamadas) ─────────────────
-  const cfg = Object.assign({ name: "", id: "", local: false, lang: "auto", source: "mic", engine: "vosk", translate: true, audience: "provider" }, store.get("inturp.cfg", {}));
+  const cfg = Object.assign({ name: "", id: "", local: false, lang: "auto", source: "mic", engine: "vosk", translate: true, audience: "provider", precise: true }, store.get("inturp.cfg", {}));
   const saveCfg = () => store.set("inturp.cfg", cfg);
 
   // ───────────────── Glosario e índice de términos ─────────────────
@@ -235,8 +235,9 @@
     $("quickData").innerHTML = [...session.nums].slice(-12).map((v) => `<button type="button" data-v="${esc(v)}">${esc(v)}</button>`).join("");
   }
 
-  // ───────────────── Traducción (traductor integrado del navegador, en el dispositivo) ─────────────────
-  // Usa la API "Translator" de Chrome (138+): corre localmente, sin internet ni API keys, y es muy rápida.
+  // ───────────────── Traducción (todo en el dispositivo, sin internet ni API keys) ─────────────────
+  // 1) Traductor integrado de Chrome 138+ (el más rápido).  2) Respaldo en cualquier navegador: Bergamot
+  //    (el motor de traducción offline de Firefox, WebAssembly) con modelos servidos desde este sitio.
   const translators = {};
   const hasTranslator = () => "Translator" in self;
   function getTranslator(from, to) {
@@ -252,25 +253,108 @@
           sourceLanguage: from, targetLanguage: to,
           monitor(m) { m.addEventListener("downloadprogress", (e) => { if (e.loaded < 1) notice(`Setting up the translator (${from.toUpperCase()}→${to.toUpperCase()}), one time only… ${Math.round(e.loaded * 100)}%`); else notice(""); }); },
         });
-      })().catch(() => { setTimeout(() => delete translators[k], 15000); return null; });
+      })().catch(() => null);
     }
     return translators[k];
   }
-  /** Debe llamarse dentro de un clic: la primera vez el navegador descarga el modelo de traducción. */
+  let bergamot = null;
+  function getBergamot() {
+    if (!bergamot) {
+      const url = new URL("models/bergamot/registry.json", location.href).href;
+      bergamot = fetch(url, { method: "HEAD" }).then((r) => { if (!r.ok) throw new Error("no bergamot models"); return import("./vendor/bergamot/translator.js"); })
+        .then((m) => {
+          const t = new m.BatchTranslator({ workers: 1, batchSize: 1, pivotLanguage: null, downloadTimeout: 0, registryUrl: url });
+          if (t.backing && t.backing.registry) t.backing.registry.catch(() => {});
+          return t;
+        }).catch((e) => { setTimeout(() => { bergamot = null; }, 30000); throw e; });
+    }
+    return bergamot;
+  }
+  /** Debe llamarse dentro de un clic: la primera vez Chrome descarga su modelo de traducción. */
   function prepareTranslators() {
-    if (!cfg.translate || !hasTranslator()) return;
-    getTranslator("es", "en"); getTranslator("en", "es");
+    if (!cfg.translate) return;
+    if (hasTranslator()) { getTranslator("es", "en"); getTranslator("en", "es"); return; }
+    getBergamot().then((b) => { // precarga los modelos de respaldo en segundo plano
+      b.translate({ from: "es", to: "en", text: "hola", html: false }).catch(() => {});
+      b.translate({ from: "en", to: "es", text: "hello", html: false }).catch(() => {});
+    }).catch(() => {});
   }
   async function translate(text, from) {
-    if (!cfg.translate || !hasTranslator() || !text) return null;
-    const t = await getTranslator(from, from === "es" ? "en" : "es");
-    if (!t) return null;
-    try { return await t.translate(text); } catch { return null; }
+    if (!cfg.translate || !text) return null;
+    const to = from === "es" ? "en" : "es";
+    if (hasTranslator()) {
+      const t = await getTranslator(from, to);
+      if (t) { try { return await t.translate(text); } catch { /* respaldo */ } }
+    }
+    try { const b = await getBergamot(); const r = await b.translate({ from, to, text, html: false }); return r.target.text; }
+    catch { return null; }
   }
   const langOf = () => (cfg.lang.startsWith("en") ? "en" : "es");
 
-  /** Procesa una frase final. lang = "es" | "en" (idioma en que se dijo). */
-  function handleFinal(text, lang) {
+  // ───────────────── Transcripción precisa (Whisper local, en un worker) ─────────────────
+  // Vosk muestra el texto al instante; Whisper vuelve a transcribir cada frase cerrada y la corrige.
+  let ai = null, aiReady = false, aiFailed = false, aiSeq = 0;
+  const aiJobs = new Map();
+  function getAi() {
+    if (!cfg.precise || aiFailed || typeof Worker === "undefined") return null;
+    if (!ai) {
+      try { ai = new Worker("ai-worker.js", { type: "module" }); } catch { aiFailed = true; return null; }
+      ai.onmessage = onAiMessage;
+      ai.onerror = () => { aiFailed = true; ai = null; };
+      ai.postMessage({ type: "load" });
+    }
+    return ai;
+  }
+  function onAiMessage(e) {
+    const m = e.data || {};
+    if (m.type === "progress") { if (m.pct < 100) notice(`Downloading the high-accuracy model (one time only, ~${m.mb} MB)… ${m.pct}%`); }
+    else if (m.type === "ready") { aiReady = true; notice(""); toast("High-accuracy mode ready", 2500); }
+    else if (m.type === "error" && !m.id) { aiFailed = true; notice("High-accuracy mode is not available in this browser; using the fast transcript only."); setTimeout(() => notice(""), 6000); }
+    else if (m.type === "asr" || m.type === "error") {
+      const job = aiJobs.get(m.id); aiJobs.delete(m.id);
+      if (!job) return;
+      job.row.classList.remove("refining");
+      if (m.text) applyRefinement(job, m.text);
+    }
+  }
+  const words = (t) => strip(t).replace(/[^\p{L}\p{N}\s']/gu, " ").split(/\s+/).filter(Boolean);
+  function applyRefinement(job, text) {
+    if (!session || !job.row.isConnected) return;
+    const wOld = words(job.text), wNew = words(text);
+    if (wNew.join(" ") === wOld.join(" ")) return;
+    if (wNew.length > wOld.length * 2.5 + 4 || wNew.length < Math.ceil(wOld.length * 0.3)) return; // descarta alucinaciones
+    const a = analyze(text);
+    const now = Date.now();
+    for (const e of a.terms) if (!job.terms.has(e)) {
+      job.terms.add(e);
+      const v = session.termsSeen.get(e) || { n: 0, t: 0 }; v.n++; v.t = now; session.termsSeen.set(e, v);
+    }
+    job.text = text;
+    const orig = job.row.querySelector(".cell.orig");
+    orig.innerHTML = a.html; orig.classList.add("refined");
+    orig.title = "Corrected by the high-accuracy engine";
+    fillTranslation(job.row, text, job.lang);
+    renderTerms();
+    if (job.row === $("transcript").lastElementChild) renderSuggestions(suggestionsFor(a));
+  }
+
+  // ───────────────── Transcripción a dos columnas: English | Español ─────────────────
+  function fillTranslation(row, text, lang) {
+    const cell = row.querySelector(".cell.xl");
+    if (!cfg.translate) { cell.textContent = ""; return; }
+    cell.classList.add("pending");
+    const seq = (row._trSeq = (row._trSeq || 0) + 1);
+    translate(text, lang).then((t) => {
+      if (seq !== row._trSeq || !row.isConnected) return;
+      cell.classList.remove("pending");
+      cell.textContent = t || "";
+      const tr = $("transcript");
+      if (tr.scrollHeight - tr.scrollTop - tr.clientHeight < 160) tr.scrollTop = tr.scrollHeight;
+    });
+  }
+
+  /** Procesa una frase final. lang = "es" | "en" (idioma en que se dijo). audio = Float32Array 16 kHz (opcional). */
+  function handleFinal(text, lang, audio) {
     text = text.trim();
     if (!text || !session) return;
     lang = lang || langOf();
@@ -288,38 +372,49 @@
 
     const tr = $("transcript");
     if (session.count === 1) tr.innerHTML = "";
-    const p = document.createElement("div");
+    const row = document.createElement("div");
     const tags = [...a.doms, ...(a.question ? ["duda"] : [])];
-    p.className = "phrase " + (a.doms[0] || "");
-    p.innerHTML = `<span class="time">${fmtTime(elapsed())}</span><span class="lang">${lang.toUpperCase()}</span><span class="tags">${tags.map((t) => `<span class="tag ${t}">${DOM_LABEL[t]}</span>`).join("")}</span>${a.html}`;
-    tr.appendChild(p);
+    row.className = "trow " + (a.doms[0] || "");
+    const origCell = `<div class="cell orig" lang="${lang}">${a.html}</div>`;
+    const xlCell = `<div class="cell xl" lang="${lang === "es" ? "en" : "es"}"></div>`;
+    row.innerHTML = `<div class="meta"><span class="time">${fmtTime(elapsed())}</span><span class="lang">${lang.toUpperCase()}</span>${tags.map((t) => `<span class="tag ${t}">${DOM_LABEL[t]}</span>`).join("")}</div>`
+      + (lang === "en" ? origCell + xlCell : xlCell + origCell);
+    tr.appendChild(row);
     while (tr.children.length > 300) tr.firstChild.remove();
     tr.scrollTop = tr.scrollHeight;
-    $("interimTr").textContent = "";
+    clearInterim();
+    fillTranslation(row, text, lang);
 
-    if (cfg.translate && hasTranslator()) {
-      translate(text, lang).then((t) => {
-        if (!t || !p.isConnected) return;
-        const x = document.createElement("div"); x.className = "xl"; x.textContent = t; p.appendChild(x);
-        const near = tr.scrollHeight - tr.scrollTop - tr.clientHeight < 120;
-        if (near) tr.scrollTop = tr.scrollHeight;
-      });
+    // corrección con Whisper (si está listo)
+    if (audio && audio.length > 8000 && cfg.precise && aiReady && getAi()) {
+      const id = ++aiSeq;
+      aiJobs.set(id, { row, text, lang, terms: new Set(a.terms) });
+      row.classList.add("refining");
+      ai.postMessage({ type: "asr", id, lang, audio }, [audio.buffer]);
     }
 
     renderSuggestions(suggestionsFor(a));
     renderMeter(); renderTerms(); renderChips();
   }
 
-  let interimT, interimTrT, interimSeq = 0;
-  function handleInterim(text, lang) {
+  function clearInterim() {
     const box = $("interim");
-    if (!text) { box.textContent = ""; clearTimeout(interimTrT); return; }
+    box.querySelectorAll(".cell").forEach((c) => { c.innerHTML = ""; c.classList.remove("orig", "xl"); });
+    box.classList.remove("on");
+    interimSeq++;
+  }
+  let interimT, interimTrBusy = false, interimPending = null, interimSeq = 0;
+  function handleInterim(text, lang) {
+    if (!text) { clearInterim(); clearTimeout(interimT); return; }
     lang = lang || langOf();
     clearTimeout(interimT);
     interimT = setTimeout(() => {
       if (!session) return;
       const a = analyze(text);
-      box.innerHTML = `<span class="lang">${lang.toUpperCase()}</span>` + a.html + " …";
+      const box = $("interim"); box.classList.add("on");
+      const o = box.querySelector(`.cell[data-l="${lang}"]`), x = box.querySelector(`.cell[data-l="${lang === "es" ? "en" : "es"}"]`);
+      o.classList.add("orig"); o.classList.remove("xl"); x.classList.add("xl"); x.classList.remove("orig");
+      o.innerHTML = a.html + " …";
       // términos y sugerencias en vivo, sin esperar a que termine la frase
       let changed = false; const now = Date.now();
       for (const e of a.terms) if (!session.liveTerms.has(e)) {
@@ -329,12 +424,21 @@
       if (changed) renderTerms();
       const s = suggestionsFor(a);
       if (a.terms.length || s.length > 1 || a.question) renderSuggestions(s);
+      // traducción en vivo: una a la vez, siempre con el texto más reciente
+      if (cfg.translate) { interimPending = { text, lang, seq: interimSeq }; pumpInterimTr(); }
     }, 40);
-    if (cfg.translate && hasTranslator()) {
-      clearTimeout(interimTrT);
-      const seq = ++interimSeq;
-      interimTrT = setTimeout(() => translate(text, lang).then((t) => { if (t && seq === interimSeq && $("interim").textContent) $("interimTr").textContent = t; }), 250);
+  }
+  async function pumpInterimTr() {
+    if (interimTrBusy || !interimPending) return;
+    interimTrBusy = true;
+    const job = interimPending; interimPending = null;
+    const t = await translate(job.text, job.lang);
+    interimTrBusy = false;
+    if (t && job.seq === interimSeq) {
+      const x = $("interim").querySelector(`.cell[data-l="${job.lang === "es" ? "en" : "es"}"]`);
+      if (x) x.textContent = t + " …";
     }
+    pumpInterimTr();
   }
 
   // ───────────────── Tarjetas ─────────────────
@@ -452,6 +556,15 @@
   // ── Motor local (Vosk) ──
   const voskModels = {};
   let vosk = null, voskGen = 0;
+  function resampleTo16k(x, rate) {
+    if (rate === 16000) return x;
+    const ratio = rate / 16000, n = Math.floor(x.length / ratio), out = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const p = i * ratio, j = Math.floor(p), f = p - j;
+      out[i] = x[j] * (1 - f) + (x[j + 1] || 0) * f;
+    }
+    return out;
+  }
   function makeCtx() {
     try { return new AudioContext({ sampleRate: 16000, latencyHint: "interactive" }); } catch { return new AudioContext(); }
   }
@@ -483,7 +596,7 @@
 
   // Cierre de frase rápido: si hay 0.55 s de silencio (o el texto parcial no cambia en 1.1 s) se cierra la frase,
   // en lugar de esperar los 1–2 s que usa el modelo por defecto.
-  const SILENCE_MS = 550, STABLE_MS = 1100;
+  const SILENCE_MS = 800, STABLE_MS = 1500;
   let lastLang = "es";
 
   async function startVosk() {
@@ -513,7 +626,14 @@
     if (audioCtx.state === "suspended") { try { await audioCtx.resume(); } catch { /* */ } }
     const rate = audioCtx.sampleRate;
 
-    const v = { recs: [], partial: {}, partialAt: 0, partialText: "", seg: null, speaking: false, silentSince: 0, floor: 0.004 };
+    const v = { recs: [], partial: {}, partialAt: 0, partialText: "", seg: null, speaking: false, silentSince: 0, floor: 0.004, chunks: [], samples: 0 };
+    // audio de la frase en curso (para que Whisper la vuelva a transcribir con más precisión)
+    const takeAudio = () => {
+      const chunks = v.chunks; v.chunks = []; const n = v.samples; v.samples = 0;
+      if (!cfg.precise || !aiReady || n < rate * 0.5) return null;
+      const all = new Float32Array(n); let o = 0; for (const c of chunks) { all.set(c, o); o += c.length; }
+      return resampleTo16k(all, rate);
+    };
     // Modo auto: ambos modelos escuchan; en cada frase gana el que tenga más confianza.
     const decide = () => {
       const seg = v.seg; v.seg = null;
@@ -527,12 +647,17 @@
         if (score > bestScore) { bestScore = score; best = lg; }
       }
       if (!best) return;
+      // fragmentos muy cortos: se mantiene el último idioma salvo que el otro sea claramente mejor
+      if (best !== lastLang && (seg[lastLang] || []).length && seg[best].length <= 3) {
+        const avgOf = (w) => w.reduce((t, x) => t + (x.conf || 0), 0) / w.length;
+        if (avgOf(seg[best]) - avgOf(seg[lastLang]) < 0.12) best = lastLang;
+      }
       // descarta ruido: 1–2 palabras con baja confianza
       const bw = seg[best], bavg = bw.reduce((t, x) => t + (x.conf || 0), 0) / bw.length;
       if (bw.length <= 2 && bavg < 0.8) return;
       lastLang = best;
       handleInterim("");
-      handleFinal(seg[best].map((x) => x.word).join(" "), best);
+      handleFinal(seg[best].map((x) => x.word).join(" "), best, takeAudio());
     };
     for (let i = 0; i < models.length; i++) {
       const lg = langs[i];
@@ -542,8 +667,8 @@
         if (gen !== voskGen) return;
         v.partial[lg] = "";
         const res = m.result || {};
-        if (!res.text) return;
-        if (!auto) { handleInterim(""); handleFinal(res.text, lg); return; }
+        if (!res.text) { if (!auto && !v.partialText) { v.chunks = []; v.samples = 0; } return; }
+        if (!auto) { handleInterim(""); handleFinal(res.text, lg, takeAudio()); return; }
         if (!v.seg) { v.seg = { es: [], en: [] }; setTimeout(decide, 450); }
         v.seg[lg].push(...(res.result || res.text.split(" ").map((w) => ({ word: w, conf: 0.5 }))));
       });
@@ -564,6 +689,10 @@
       if (state !== "running" || gen !== voskGen) return;
       const data = e.inputBuffer.getChannelData(0);
       for (const r of v.recs) { try { r.acceptWaveformFloat(data, rate); } catch { /* */ } }
+      if (cfg.precise && aiReady && (v.speaking || v.partialText || v.samples)) {
+        v.chunks.push(data.slice()); v.samples += data.length;
+        while (v.samples > rate * 28) v.samples -= v.chunks.shift().length;  // Whisper procesa hasta 30 s
+      }
       // detector de voz por energía con piso de ruido adaptativo
       let sum = 0; for (let i = 0; i < data.length; i += 4) sum += data[i] * data[i];
       const rms = Math.sqrt(sum / (data.length / 4));
@@ -677,6 +806,7 @@
   async function start() {
     if (state !== "idle") return;
     prepareTranslators();   // dentro del clic: el navegador puede necesitar descargar el traductor
+    getAi();                // carga el modelo preciso en segundo plano (la 1.ª vez lo descarga)
     if (cfg.engine === "browser" && (!SR || cfg.lang === "auto")) { cfg.engine = "vosk"; $("selEngine").value = "vosk"; saveCfg(); }
     if (cfg.engine === "vosk" && (!window.WebAssembly || !window.AudioContext)) { notice("This browser does not support the local engine. Use an up-to-date Chrome, Edge, Firefox or Safari.", true); return; }
     notice("");
@@ -693,10 +823,6 @@
       return;
     }
     if (cfg.engine === "browser") localOK = await prepareLocal(cfg.lang);
-    if (cfg.translate && !hasTranslator() && !store.get("inturp.trWarned", false)) {
-      notice("For live translation use Google Chrome 138 or newer (desktop): it has a built-in translator that works offline. Suggestions and cards are still bilingual.");
-      store.set("inturp.trWarned", true);
-    }
     $("transcript").innerHTML = `<p class="empty">Listening…</p>`;
     t0 = Date.now(); pausedMs = 0;
     setState("running");
@@ -739,8 +865,8 @@
   function wipe() {
     session = null; t0 = 0; pausedMs = 0;
     $("transcript").innerHTML = `<p class="empty">Call ended. All content was erased.</p>`;
-    $("interim").textContent = "";
-    $("interimTr").textContent = "";
+    clearInterim();
+    aiJobs.clear(); if (ai) ai.postMessage({ type: "clear" });
     $("suggestions").innerHTML = `<p class="empty">Suggestions will appear here based on what is said.</p>`;
     $("terms").innerHTML = `<p class="empty">Glossary terms will appear here when they are heard.</p>`;
     $("termCount").textContent = "0";
@@ -804,11 +930,13 @@
     $("btnStop").onclick = () => stop(false);
     $("btnSwap").onclick = swapLang;
     $("selLang").onchange = (e) => { cfg.lang = e.target.value; applyLang(); };
+    $("cfgPrecise").checked = cfg.precise;
+    $("cfgPrecise").onchange = (e) => { cfg.precise = e.target.checked; saveCfg(); if (cfg.precise) getAi(); };
     $("cfgTranslate").checked = cfg.translate;
     $("cfgTranslate").onchange = (e) => { cfg.translate = e.target.checked; saveCfg(); if (cfg.translate) prepareTranslators(); };
     $("trInfo").textContent = hasTranslator()
-      ? "Your browser has a built-in translator: translation runs on your device, offline."
-      : "Your browser has no built-in translator. Use Google Chrome 138 or newer (desktop).";
+      ? "Uses Chrome's built-in translator (on your device, offline)."
+      : "Uses the offline translator included in the page (Bergamot, ~35 MB one-time download). Works in any browser.";
 
     $("audience").onclick = (e) => {
       const b = e.target.closest("button"); if (!b) return;
@@ -903,5 +1031,5 @@
   renderCards();
   setState("idle");
   // Gancho mínimo para pruebas automáticas (no expone datos de llamadas).
-  window.__inturp = { analyze, suggestionsFor, parseGlossary, handleFinal: (t) => { if (!session) session = freshSession(); handleFinal(t); }, wipe: () => { stop(true); wipe(); } };
+  window.__inturp = { analyze, suggestionsFor, parseGlossary, translate, getBergamot, handleFinal: (t) => { if (!session) session = freshSession(); handleFinal(t); }, wipe: () => { stop(true); wipe(); } };
 })();
