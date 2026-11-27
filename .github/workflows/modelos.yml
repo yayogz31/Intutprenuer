@@ -63,6 +63,18 @@ jobs:
           done
           du -sh "$D"
 
+      - name: Whisper encoder para GPU (WebGPU, más rápido)
+        run: |
+          set -euo pipefail
+          R=onnx-community/whisper-base
+          D=models/hf/$R/onnx
+          mkdir -p "$D"
+          for f in encoder_model.onnx encoder_model_fp16.onnx; do
+            if [ -f "$D/$f" ]; then echo "$f ya existe"; continue; fi
+            curl -fsSL --retry 3 "https://huggingface.co/$R/resolve/main/onnx/$f" -o "$D/$f"
+          done
+          ls -lh "$D"
+
       - name: Bergamot (traducción offline ES⇄EN)
         env:
           FORCE: ${{ inputs.force }}
