@@ -6,9 +6,9 @@
   "use strict";
   const $ = (id) => document.getElementById(id);
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const DOMS = ["medico", "legal", "bancario"];
-  const DOM_LABEL = { medico: "Médico", legal: "Legal", bancario: "Bancario", duda: "Duda", general: "General" };
-  const TAB_FOR_DOM = { medico: "Médico", legal: "Legal", bancario: "Bancario" };
+  const DOMS = ["medico", "legal", "bancario", "seguros"];
+  const DOM_LABEL = { medico: "Médico", legal: "Legal", bancario: "Bancario", seguros: "Seguros", duda: "Duda", general: "General" };
+  const TAB_FOR_DOM = { medico: "Médico", legal: "Legal", bancario: "Bancario", seguros: "Seguros" };
 
   // ───────────────── Utilidades ─────────────────
   const strip = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -49,7 +49,7 @@
   }
 
   // ───────────────── Configuración (solo preferencias, nunca texto de llamadas) ─────────────────
-  const cfg = Object.assign({ name: "", id: "", local: false, lang: "es-MX", source: "mic" }, store.get("inturp.cfg", {}));
+  const cfg = Object.assign({ name: "", id: "", local: false, lang: "es-MX", source: "mic", engine: "vosk" }, store.get("inturp.cfg", {}));
   const saveCfg = () => store.set("inturp.cfg", cfg);
 
   // ───────────────── Glosario e índice de términos ─────────────────
@@ -63,6 +63,7 @@
     if (/^(med|salud|health|clin)/.test(d)) return "medico";
     if (/^(leg|jur|law|court)/.test(d)) return "legal";
     if (/^(ban|fin|bank|money|credit)/.test(d)) return "bancario";
+    if (/^(seg|ins|auto|car|veh|tran)/.test(d)) return "seguros";
     return "general";
   }
   function loadGlossary() {
@@ -71,13 +72,33 @@
     glossary = extra ? (extra.replace ? extra.items : base.concat(extra.items)) : base;
     buildIndex();
   }
+  /** Saca las formas buscables de un texto: "ATM (Automated Teller Machine)" → atm, automated teller machine;
+   *  "copago, pago compartido / co-pay" → cada variante; "beneficiario(a)" → beneficiario; "to renew" → renew. */
+  function keyVariants(text) {
+    const out = [];
+    const add = (v) => {
+      v = strip(v).replace(/^\s*(to|the|el|la|los|las|un|una)\s+/, "").replace(/[“”"']/g, "").replace(/\s+/g, " ").trim();
+      if (v.length < 2) return;
+      out.push(v);
+      if (v.includes(".")) { const d = v.replace(/\./g, "").replace(/\s+/g, " ").trim(); if (d.length >= 2) out.push(d); }
+    };
+    for (const part of String(text).split(/[,;/]/)) {
+      const inner = [...part.matchAll(/\(([^)]*)\)/g)].map((m) => m[1]);
+      add(part.replace(/\([^)]*\)/g, " "));
+      for (const i of inner) if (i.trim().split(/\s+/).length >= 2 || /^[a-z]{4,}$/i.test(i.trim())) add(i);
+    }
+    return out;
+  }
   function buildIndex() {
     termIndex = new Map();
+    const ignore = new Set((window.GLOSARIO_IGNORAR || []).map((w) => strip(w)));
     for (const e of glossary) {
       for (const k of [e.t, e.tr]) {
         if (!k) continue;
-        const key = strip(k).trim();
-        if (key.length >= 2 && !termIndex.has(key)) termIndex.set(key, e);
+        for (const key of keyVariants(k)) {
+          if (ignore.has(key) || (key.length < 3 && !/^[a-z]{2}$/.test(key) )) continue;
+          if (!termIndex.has(key)) termIndex.set(key, e);
+        }
       }
     }
     const keys = [...termIndex.keys()].sort((a, b) => b.length - a.length).map(reEsc);
@@ -110,7 +131,7 @@
       if (/\d{2,}|\$|%|[:/]/.test(raw) || /dolar|dollar|peso|usd|ciento|percent/i.test(raw)) nums.push(raw);
       spans.push({ a: m2.index, b: m2.index + m2[0].length, kind: "num" });
     }
-    const score = { medico: 0, legal: 0, bancario: 0 };
+    const score = { medico: 0, legal: 0, bancario: 0, seguros: 0 };
     for (const d of DOMS) { if (kwRe[d]) score[d] += (n.match(kwRe[d]) || []).length; }
     for (const e of terms) if (score[e.dom] !== undefined) score[e.dom] += 2;
     const max = Math.max(...Object.values(score));
@@ -158,7 +179,7 @@
   // ───────────────── Estado de la sesión (solo memoria) ─────────────────
   let session = null;
   const freshSession = () => ({
-    acc: { medico: 0, legal: 0, bancario: 0 },
+    acc: { medico: 0, legal: 0, bancario: 0, seguros: 0 },
     termsSeen: new Map(),   // entrada → contador
     nums: new Set(),
     count: 0,
@@ -259,9 +280,12 @@
   }
 
   // ───────────────── Captura de audio y reconocimiento ─────────────────
+  // Dos motores:
+  //  • "vosk": 100 % local (WebAssembly). Escucha cualquier fuente (micrófono, pestaña, sistema). Sin internet.
+  //  • "browser": Web Speech API de Chrome/Edge (usa el servicio en línea del navegador).
   let state = "idle";        // idle | running | paused
   let rec = null, streams = [], audioCtx = null, track = null, trackSupported = true;
-  let t0 = 0, pausedMs = 0, pauseAt = 0, tick = null, errStreak = 0;
+  let t0 = 0, pausedMs = 0, pauseAt = 0, tick = null, errStreak = 0, netErr = 0;
   const elapsed = () => (t0 ? (state === "paused" ? pauseAt : Date.now()) - t0 - pausedMs : 0);
 
   function setState(s) {
@@ -274,10 +298,21 @@
     $("btnStop").disabled = s === "idle";
     $("btnPause").textContent = s === "paused" ? "▶ Reanudar" : "❚❚ Pausar";
     $("selSource").disabled = s !== "idle";
+    $("selEngine").disabled = s !== "idle";
+  }
+  function forcePause(msg) {
+    notice(msg, true);
+    stopRecognition();
+    if (state === "running") { setState("paused"); pauseAt = Date.now(); }
   }
 
   async function getAudioTrack(source) {
-    if (source === "mic") return null; // el reconocimiento usa el micrófono predeterminado directamente
+    if (source === "mic") {
+      if (cfg.engine === "browser") return null; // Web Speech usa el micrófono predeterminado directamente
+      const mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      streams.push(mic);
+      return mic.getAudioTracks()[0];
+    }
     const disp = await navigator.mediaDevices.getDisplayMedia({
       video: true, audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       systemAudio: "include", selfBrowserSurface: "exclude", preferCurrentTab: false,
@@ -285,7 +320,7 @@
     streams.push(disp);
     const sysTrack = disp.getAudioTracks()[0];
     if (!sysTrack) throw new Error("NO_SYSTEM_AUDIO");
-    sysTrack.addEventListener("ended", () => { if (state !== "idle") { pause(); notice("Se dejó de compartir el audio del sistema. Presiona Terminar e Inicia de nuevo para volver a compartir."); } });
+    sysTrack.addEventListener("ended", () => { if (state !== "idle") forcePause("Se dejó de compartir el audio. Presiona Terminar e Inicia de nuevo para volver a compartir."); });
     if (source === "system") return sysTrack;
     // mezcla micrófono + sistema
     const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -297,6 +332,72 @@
     return dest.stream.getAudioTracks()[0];
   }
 
+  // ── Motor local (Vosk) ──
+  const voskModels = {};
+  let vosk = null, voskGen = 0;
+  function loadScript(src) {
+    return new Promise((res, rej) => {
+      const el = document.createElement("script");
+      el.src = src; el.onload = res; el.onerror = () => rej(new Error("no se pudo cargar " + src));
+      document.head.appendChild(el);
+    });
+  }
+  async function getVoskModel(lang) {
+    if (!window.Vosk) await loadScript("vendor/vosk.js");
+    const k = lang.startsWith("en") ? "en" : "es";
+    if (!voskModels[k]) {
+      const url = new URL(`models/${k}.tar.gz`, location.href).href;
+      voskModels[k] = (async () => {
+        const head = await fetch(url, { method: "HEAD" }).catch(() => null);
+        if (head && !head.ok) throw new Error(`falta el archivo models/${k}.tar.gz`);
+        const m = new window.Vosk.Model(url, -1);
+        await new Promise((res, rej) => {
+          const to = setTimeout(() => rej(new Error("tiempo de espera agotado al cargar el modelo")), 240000);
+          m.on("load", (e) => { clearTimeout(to); e.result ? res() : rej(new Error("modelo inválido")); });
+          m.on("error", (e) => { clearTimeout(to); rej(new Error(e.error || "modelo inválido")); });
+        });
+        return m;
+      })().catch((e) => { delete voskModels[k]; throw e; });
+    }
+    return voskModels[k];
+  }
+  async function startVosk() {
+    const gen = ++voskGen;
+    const slow = setTimeout(() => notice("Cargando el modelo de voz local (unos 40 MB, solo la primera vez)…"), 300);
+    let model;
+    try { model = await getVoskModel(cfg.lang); }
+    catch (e) {
+      clearTimeout(slow);
+      if (gen === voskGen) forcePause(`No se pudo cargar el motor local (${(e && e.message) || e}). Revisa que la acción «Modelos de voz» de GitHub haya terminado, o cambia el motor a «Navegador».`);
+      return;
+    }
+    clearTimeout(slow);
+    if (gen !== voskGen || state !== "running") return;
+    notice("");
+    if (!audioCtx) audioCtx = new AudioContext();
+    if (audioCtx.state === "suspended") { try { await audioCtx.resume(); } catch { /* */ } }
+    const r = new model.KaldiRecognizer(audioCtx.sampleRate);
+    r.on("result", (m) => {
+      if (gen !== voskGen) return;
+      const t = m.result && m.result.text;
+      handleInterim("");
+      if (t) handleFinal(t);
+    });
+    r.on("partialresult", (m) => { if (gen === voskGen) handleInterim((m.result && m.result.partial) || ""); });
+    const src = audioCtx.createMediaStreamSource(new MediaStream([track]));
+    const proc = audioCtx.createScriptProcessor(4096, 1, 1);
+    proc.onaudioprocess = (e) => { if (state === "running" && gen === voskGen) { try { r.acceptWaveform(e.inputBuffer); } catch { /* */ } } };
+    src.connect(proc); proc.connect(audioCtx.destination);
+    vosk = { r, src, proc };
+  }
+  function stopVosk() {
+    voskGen++;
+    if (!vosk) return;
+    try { vosk.proc.onaudioprocess = null; vosk.proc.disconnect(); vosk.src.disconnect(); vosk.r.remove(); } catch { /* */ }
+    vosk = null;
+  }
+
+  // ── Motor del navegador (Web Speech API) ──
   async function prepareLocal(lang) {
     if (!cfg.local) return false;
     try {
@@ -304,14 +405,14 @@
         const st = await SR.available({ langs: [lang], processLocally: true });
         if (st === "available") return true;
         if ((st === "downloadable" || st === "downloading") && typeof SR.install === "function") {
-          notice("Descargando el modelo de voz local (solo la primera vez)…");
+          notice("Descargando el modelo de voz del navegador (solo la primera vez)…");
           const ok = await SR.install({ langs: [lang], processLocally: true });
           notice("");
           return !!ok;
         }
       }
     } catch { /* no soportado */ }
-    notice("Tu navegador no ofrece reconocimiento en el dispositivo para este idioma; se usa el motor estándar del navegador.");
+    notice("Tu navegador no ofrece reconocimiento en el dispositivo para este idioma; se usa su servicio en línea.");
     return false;
   }
 
@@ -320,7 +421,7 @@
     r.lang = cfg.lang; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
     if (local && "processLocally" in r) r.processLocally = true;
     r.onresult = (e) => {
-      errStreak = 0;
+      errStreak = 0; netErr = 0;
       let interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i];
@@ -332,22 +433,24 @@
     r.onerror = (e) => {
       if (e.error === "no-speech" || e.error === "aborted") return;
       const fatal = { "not-allowed": "Permiso de micrófono denegado. Actívalo en el candado de la barra de direcciones.",
-        "service-not-allowed": "El navegador bloqueó el servicio de voz. Usa Google Chrome o Microsoft Edge.",
+        "service-not-allowed": "Este navegador bloquea el servicio de voz en línea. Cambia el motor a «Local» en la barra superior.",
         "audio-capture": "No se encontró un dispositivo de audio.",
-        "language-not-supported": "Idioma no soportado por el motor de voz." }[e.error];
-      if (fatal) { notice(fatal, true); stopRecognition(); setState("paused"); pauseAt = Date.now(); return; }
+        "language-not-supported": "Idioma no soportado por el motor de voz del navegador." }[e.error];
+      if (fatal) { forcePause(fatal); return; }
       errStreak++;
-      if (e.error === "network") notice("Problema de red con el motor de voz del navegador; reintentando…", true);
+      if (e.error === "network" && ++netErr >= 3) {
+        forcePause("El servicio de voz en línea del navegador no responde (error de red). Esto pasa en Brave/Opera/Chromium, con VPN o redes que lo bloquean. Usa el motor «Local (sin internet)».");
+      }
     };
     r.onend = () => {
       if (rec !== r) return;
-      if (state === "running") setTimeout(() => state === "running" && startRecognition(), errStreak > 3 ? 1000 : 0);
+      if (state === "running") setTimeout(() => state === "running" && cfg.engine === "browser" && startBrowser(), errStreak > 0 ? 800 : 0);
     };
     return r;
   }
 
   let localOK = false;
-  function startRecognition() {
+  function startBrowser() {
     rec = makeRec(localOK);
     try {
       if (track && trackSupported) {
@@ -355,39 +458,43 @@
         catch (err) {
           trackSupported = false;
           rec = makeRec(localOK); rec.start();
-          notice("Tu navegador no permite reconocer audio del sistema directamente; se está usando el micrófono predeterminado. Actualiza Chrome/Edge o usa un cable de audio virtual (ver README).", true);
+          notice("El motor del navegador no puede escuchar el audio del sistema; está usando el micrófono. Para YouTube/sistema usa el motor «Local».", true);
         }
       } else rec.start();
     } catch (err) { /* ya iniciado */ }
   }
+
+  function startRecognition() { return cfg.engine === "vosk" ? startVosk() : startBrowser(); }
   function stopRecognition() {
+    stopVosk();
     const r = rec; rec = null;
     if (r) { try { r.onend = null; r.abort(); } catch { /* */ } }
     handleInterim("");
   }
 
   async function start() {
-    if (!SR) { notice("Este navegador no soporta reconocimiento de voz. Usa Google Chrome o Microsoft Edge (escritorio).", true); return; }
     if (state !== "idle") return;
+    if (cfg.engine === "browser" && !SR) { notice("Este navegador no tiene reconocimiento de voz propio. Usa el motor «Local (sin internet)».", true); return; }
+    if (cfg.engine === "vosk" && (!window.WebAssembly || !window.AudioContext)) { notice("Este navegador no soporta el motor local. Usa Chrome, Edge o Firefox actualizados.", true); return; }
     notice("");
     session = freshSession();
-    trackSupported = true;
+    trackSupported = true; netErr = 0; errStreak = 0;
     try {
       track = await getAudioTrack(cfg.source);
     } catch (err) {
       cleanupAudio();
       session = null;
       notice(err && err.message === "NO_SYSTEM_AUDIO"
-        ? "No se recibió audio del sistema: al compartir, elige una pestaña o 'Toda la pantalla' y activa «Compartir audio»."
+        ? "No se recibió audio: al compartir, elige la pestaña (p. ej. YouTube) o 'Toda la pantalla' y activa «Compartir audio»."
         : "No se pudo acceder al audio: " + (err && err.name === "NotAllowedError" ? "permiso denegado." : (err && err.message) || err), true);
       return;
     }
-    localOK = await prepareLocal(cfg.lang);
+    if (cfg.engine === "browser") localOK = await prepareLocal(cfg.lang);
     $("transcript").innerHTML = `<p class="empty">Escuchando…</p>`;
     t0 = Date.now(); pausedMs = 0;
     setState("running");
-    startRecognition();
     tick = setInterval(() => ($("timer").textContent = fmtTime(elapsed())), 500);
+    startRecognition();
   }
 
   function pause() {
@@ -473,6 +580,7 @@
   // ───────────────── Eventos ─────────────────
   function bind() {
     $("selLang").value = cfg.lang; $("selSource").value = cfg.source;
+    $("cfgLocal").disabled = false;
     $("cfgName").value = cfg.name; $("cfgId").value = cfg.id; $("cfgLocal").checked = cfg.local;
     $("localInfo").textContent = SR && (typeof SR.available === "function" || "processLocally" in SR.prototype)
       ? "Tu navegador parece soportarlo: el audio no saldría del equipo."
@@ -487,6 +595,8 @@
       if (state === "running") { stopRecognition(); startRecognition(); }
     };
     $("selSource").onchange = (e) => { cfg.source = e.target.value; saveCfg(); };
+    $("selEngine").value = cfg.engine;
+    $("selEngine").onchange = (e) => { cfg.engine = e.target.value; saveCfg(); notice(""); };
     $("btnSettings").onclick = () => $("dlgSettings").showModal();
     $("cfgName").oninput = (e) => { cfg.name = e.target.value; saveCfg(); renderCards(); };
     $("cfgId").oninput = (e) => { cfg.id = e.target.value; saveCfg(); renderCards(); };

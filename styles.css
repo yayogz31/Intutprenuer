@@ -1,7 +1,7 @@
 :root {
   --bg: #0f1419; --panel: #172029; --panel2: #1e2a35; --line: #2a3947;
   --tx: #e6edf3; --mut: #8b9bab; --acc: #4cc2ff;
-  --med: #3ddc97; --leg: #f5b84b; --ban: #7aa2ff; --dud: #ff7ab6; --gen: #9aa7b4;
+  --med: #3ddc97; --leg: #f5b84b; --ban: #7aa2ff; --seg: #c792ea; --dud: #ff7ab6; --gen: #9aa7b4;
   --ok: #2fbf71; --warn: #f0a92c; --bad: #ef4f5a;
 }
 * { box-sizing: border-box; }
@@ -42,18 +42,19 @@ select, input[type=text], input[type=search], textarea { background: var(--panel
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .empty { color: var(--mut); font-style: italic; margin: 4px 0; }
 
-.meter { display: flex; gap: 6px; font-size: 12px; }
+.meter { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
 .meter span { padding: 2px 8px; border-radius: 99px; background: var(--panel2); color: var(--mut); transition: all .2s; }
 .meter span.lead[data-dom=medico] { background: var(--med); color: #032; }
 .meter span.lead[data-dom=legal] { background: var(--leg); color: #320; }
 .meter span.lead[data-dom=bancario] { background: var(--ban); color: #012; }
+.meter span.lead[data-dom=seguros] { background: var(--seg); color: #201; }
 
 .transcript { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px; }
 .phrase { background: var(--panel2); border-left: 3px solid var(--gen); border-radius: 6px; padding: 6px 9px; font-size: 15px; }
-.phrase.medico { border-color: var(--med); } .phrase.legal { border-color: var(--leg); } .phrase.bancario { border-color: var(--ban); }
+.phrase.medico { border-color: var(--med); } .phrase.legal { border-color: var(--leg); } .phrase.bancario { border-color: var(--ban); } .phrase.seguros { border-color: var(--seg); }
 .phrase .tags { display: inline-flex; gap: 4px; margin-right: 6px; vertical-align: 1px; }
 .tag { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; background: var(--gen); color: #111; }
-.tag.medico { background: var(--med); } .tag.legal { background: var(--leg); } .tag.bancario { background: var(--ban); } .tag.duda { background: var(--dud); }
+.tag.medico { background: var(--med); } .tag.legal { background: var(--leg); } .tag.bancario { background: var(--ban); } .tag.seguros { background: var(--seg); } .tag.duda { background: var(--dud); }
 .phrase .time { color: var(--mut); font-size: 11px; margin-right: 6px; }
 mark.hl-term { background: rgba(76,194,255,.18); color: var(--acc); border-bottom: 1px dotted var(--acc); padding: 0 2px; border-radius: 3px; cursor: help; }
 mark.num { background: rgba(255,122,182,.15); color: var(--dud); padding: 0 2px; border-radius: 3px; }
@@ -78,7 +79,7 @@ mark.num { background: rgba(255,122,182,.15); color: var(--dud); padding: 0 2px;
 .terms { max-height: 34%; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
 .terms.small { max-height: 18%; }
 .term { background: var(--panel2); border-left: 3px solid var(--gen); border-radius: 6px; padding: 5px 8px; animation: pop .18s ease-out; }
-.term.medico { border-color: var(--med); } .term.legal { border-color: var(--leg); } .term.bancario { border-color: var(--ban); }
+.term.medico { border-color: var(--med); } .term.legal { border-color: var(--leg); } .term.bancario { border-color: var(--ban); } .term.seguros { border-color: var(--seg); }
 .term .w { font-weight: 700; } .term .tr { color: var(--acc); } .term .d { color: var(--mut); font-size: 12.5px; }
 .term .n { float: right; color: var(--mut); font-size: 11px; }
 .search { width: 100%; }

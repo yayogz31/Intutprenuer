@@ -10,26 +10,30 @@ Asistente web para intérpretes y agentes telefónicos. Escucha la llamada, tran
 
 Botones **Iniciar**, **Pausar/Reanudar** y **Terminar**. Atajos: `Alt+S`, `Alt+P`, `Alt+E`, `Alt+L` (cambiar ES ⇄ EN).
 
-## Privacidad
+## Motores de voz
 
-- La transcripción y las notas viven **solo en memoria**. Al presionar **Terminar**, al cerrar o al recargar la pestaña se borran.
-- La página tiene una política de seguridad (`connect-src 'none'`) que **le impide enviar datos a cualquier servidor**.
-- Solo se guardan en el navegador tus preferencias (nombre, ID, idioma) y el glosario que importes, nunca contenido de llamadas.
-- Nota honesta: el reconocimiento de voz lo hace el motor del navegador. En Chrome/Edge ese motor procesa el audio en los servidores de Google/Microsoft (es gratis y sin API key, pero no es 100 % local). Si tu Chrome es reciente, activa **⚙ → Reconocimiento en el dispositivo** para que el audio no salga del equipo.
+| Motor | Ventajas | Notas |
+|---|---|---|
+| **Local (sin internet)** *(predeterminado)* | El audio nunca sale de tu equipo. Escucha **cualquier fuente**: micrófono, una pestaña (YouTube, Zoom web, softphone) o toda la pantalla con audio. No necesita la red, así que no da errores de red. | Usa [Vosk](https://alphacephei.com/vosk/) (WebAssembly, Apache-2.0). La primera vez descarga el modelo (~40 MB por idioma) y luego queda guardado en el navegador. Es menos preciso que el de Google, sobre todo con ruido, y escribe los números con letra. |
+| **Navegador (en línea)** | Muy preciso, con puntuación y números en cifra. | Solo funciona en Chrome o Edge. Envía el audio al servicio de Google o Microsoft. Falla con "error de red" en Brave, Opera o Chromium, con VPN o en redes que lo bloquean. Para audio del sistema depende de la versión de Chrome. |
 
-## Navegador
-
-Usa **Google Chrome o Microsoft Edge de escritorio**. Firefox no tiene reconocimiento de voz, y Safari/Brave funcionan de forma limitada.
+Los modelos del motor local los descarga automáticamente la acción **"Modelos de voz"** (`.github/workflows/modelos.yml`) en la carpeta `models/`. Si fallara, ve a **Actions → Modelos de voz → Run workflow**.
 
 ## Fuente de audio
 
-| Opción | Qué escucha | Notas |
-|---|---|---|
-| Micrófono predeterminado | El micrófono del sistema | Funciona en cualquier Chrome/Edge. |
-| Audio del sistema / pestaña | Lo que suena en una pestaña o en toda la pantalla | Al compartir, marca **«Compartir audio»**. En Windows se puede capturar toda la pantalla con audio; en Mac solo audio de pestañas. Requiere un Chrome que acepte una pista de audio en el reconocimiento de voz. Si el tuyo no lo hace, la app te avisa y usa el micrófono. |
-| Micrófono + sistema | Tu voz y la de la otra persona | Mezcla ambas fuentes. |
+- **Micrófono predeterminado:** tu micrófono.
+- **Pestaña / audio del sistema:** al compartir, elige la pestaña (por ejemplo YouTube) y activa **"Compartir audio de la pestaña"**. En Windows también puedes elegir "Toda la pantalla" con "Compartir audio del sistema". En Mac solo se comparte el audio de pestañas.
+- **Micrófono + sistema:** tu voz y la de la otra persona, mezcladas.
 
-**Alternativa que siempre funciona para el audio del sistema:** instala un cable de audio virtual (por ejemplo VB-Audio Virtual Cable en Windows o BlackHole en Mac), envía el audio de la llamada ahí y elígelo como **micrófono predeterminado** del sistema. En Windows también sirve activar «Mezcla estéreo» y ponerla como dispositivo de entrada.
+## Privacidad
+
+- La transcripción y las notas viven **solo en memoria**. Se borran al presionar **Terminar** o al cerrar o recargar la pestaña.
+- La política de seguridad de la página (`connect-src 'self'`) **le impide enviar datos a cualquier otro servidor**. Solo puede descargar archivos de su propio sitio (el modelo de voz).
+- En el navegador solo se guardan tus preferencias, el glosario que importes y el modelo de voz, nunca contenido de llamadas.
+
+## Navegador
+
+Chrome o Edge de escritorio son los recomendados. Con el motor local también funciona en Firefox para micrófono y pestañas.
 
 ## Tu vocabulario
 

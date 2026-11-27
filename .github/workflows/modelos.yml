@@ -1,0 +1,57 @@
+name: Modelos de voz
+
+# Descarga los modelos de reconocimiento de voz offline (Vosk, Apache-2.0) y los deja en /models
+# para que GitHub Pages los sirva junto a la app. Corre una sola vez (o manualmente desde Actions).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Volver a descargar aunque ya existan"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: modelos
+  cancel-in-progress: false
+
+jobs:
+  modelos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Descargar y empaquetar modelos
+        env:
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          mkdir -p models
+          pack () {
+            local name="$1" out="$2"
+            if [ -f "models/$out" ] && [ "${FORCE:-false}" != "true" ]; then
+              echo "models/$out ya existe, se omite"; return
+            fi
+            tmp=$(mktemp -d)
+            curl -fsSL --retry 3 "https://alphacephei.com/vosk/models/$name.zip" -o "$tmp/m.zip"
+            unzip -q "$tmp/m.zip" -d "$tmp"
+            mv "$tmp/$name" "$tmp/model"
+            tar -C "$tmp" -czf "models/$out" model
+            rm -rf "$tmp"
+            ls -lh "models/$out"
+          }
+          pack vosk-model-small-es-0.42 es.tar.gz
+          pack vosk-model-small-en-us-0.15 en.tar.gz
+
+      - name: Guardar en el repositorio
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add models
+          if git diff --cached --quiet; then echo "Sin cambios"; exit 0; fi
+          git commit -m "Agregar modelos de voz offline (Vosk)"
+          git push

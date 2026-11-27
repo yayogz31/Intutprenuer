@@ -63,6 +63,32 @@ window.REGLAS = [
     s: [{ es: "Entiendo. Permítame comunicarle con un supervisor.", en: "I understand. Let me connect you with a supervisor." }] },
   { dom: "general", re: /\b(adios|hasta luego|bye|goodbye)\b/,
     s: [{ es: "Gracias por su llamada, que tenga un excelente día.", en: "Thank you for your call, have a great day." }] },
+
+  // ── Seguros / Auto ──
+  { dom: "seguros", prio: 1, re: /\b(accidente|choque|choco|chocaron|me pegaron|crash\w*|accident|hit me|rear.?ended|collision)\b/,
+    s: [{ es: "¿Todos se encuentran bien? ¿Hubo personas lesionadas?", en: "Is everyone okay? Was anyone injured?" },
+        { es: "¿Dónde y a qué hora ocurrió el accidente?", en: "Where and what time did the accident happen?" },
+        { es: "¿El vehículo se puede manejar?", en: "Is the vehicle drivable?" }] },
+  { dom: "seguros", re: /\b(reclamo|reclamacion|claim)\b/,
+    s: [{ es: "¿Tiene a la mano su número de reclamo o de póliza?", en: "Do you have your claim or policy number handy?" }] },
+  { dom: "seguros", re: /\b(grua|tow\w*|remolc\w*|corralon)\b/,
+    s: [{ es: "¿Dónde se encuentra el vehículo ahora?", en: "Where is the vehicle located right now?" }] },
+  { dom: "seguros", re: /\b(taller|body shop|estimado|presupuesto|estimate|reparacion\w*|repairs?)\b/,
+    s: [{ es: "¿Ya tiene un taller de preferencia o le recomendamos uno?", en: "Do you have a preferred body shop, or would you like a recommendation?" }] },
+  { dom: "seguros", re: /\b(deducible|deductible|cobertura|coverage|poliza|policy)\b/,
+    s: [{ es: "Déjeme revisar las coberturas de su póliza.", en: "Let me review the coverages on your policy." }] },
+  { dom: "seguros", re: /\b(otro conductor|other driver|se fue|se dio a la fuga|hit and run|huyo)\b/,
+    s: [{ es: "¿Pudo ver la placa o el vehículo del otro conductor? ¿Hizo reporte policial?", en: "Did you see the other driver's plate or vehicle? Did you file a police report?" }] },
+
+  // ── Servicios (luz, gas, agua) ──
+  { dom: "general", prio: 2, re: /\b(fuga de gas|huele a gas|olor a gas|gas leak|smell gas)\b/,
+    s: [{ es: "Por su seguridad, salga de la casa ahora y llame al 911 desde afuera.", en: "For your safety, leave the house now and call 911 from outside." }] },
+  { dom: "general", re: /\b(se fue la luz|sin luz|apagon|power outage|no power|sin agua|no water)\b/,
+    s: [{ es: "Lamento el inconveniente. ¿Desde qué hora está sin servicio?", en: "Sorry for the inconvenience. Since what time have you been without service?" }] },
+
+  // ── Riesgo (jerga penitenciaria) ──
+  { dom: "legal", prio: 3, re: /\b(dutch act|doing the dutch|suicid\w*|quitarme la vida|matarme|kill myself)\b/,
+    s: [{ es: "⚠ Posible riesgo de suicidio: interprete fielmente e informe al personal de inmediato.", en: "⚠ Possible suicide risk: interpret faithfully and alert staff immediately." }] },
 ];
 
 /* Sugerencias por defecto cuando no hay coincidencias, según el dominio dominante de la llamada. */
@@ -71,4 +97,5 @@ window.SUGERENCIAS_DEFECTO = {
   medico: [{ es: "¿Tiene algún otro síntoma?", en: "Do you have any other symptoms?" }],
   legal: [{ es: "¿Tiene algún documento o número de caso relacionado?", en: "Do you have any related document or case number?" }],
   bancario: [{ es: "¿Me confirma los últimos 4 dígitos de la cuenta o tarjeta?", en: "Can you confirm the last 4 digits of the account or card?" }],
+  seguros: [{ es: "¿Me puede dar su número de póliza o de reclamo?", en: "Can you give me your policy or claim number?" }],
 };

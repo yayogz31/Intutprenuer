@@ -3,9 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- Privacidad: la página no puede enviar datos a ningún servidor (connect-src 'none') -->
+  <!-- Privacidad: la página solo puede conectarse a su propio sitio (para descargar el modelo de voz).
+       No puede enviar datos a ningún otro servidor. 'unsafe-eval'/'wasm-unsafe-eval'/blob: los necesita el motor de voz local (WebAssembly). -->
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'">
+        content="default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
   <meta name="referrer" content="no-referrer">
   <title>Inturpreneur</title>
   <link rel="stylesheet" href="styles.css">
@@ -28,9 +29,13 @@
         <option value="en-US">English (US)</option>
       </select>
       <button id="btnSwap" class="btn ghost" title="Cambiar idioma ES ⇄ EN al vuelo (Alt+L)">ES ⇄ EN</button>
+      <select id="selEngine" title="Motor de reconocimiento de voz">
+        <option value="vosk">Motor local (sin internet)</option>
+        <option value="browser">Motor del navegador (en línea)</option>
+      </select>
       <select id="selSource" title="Fuente de audio">
         <option value="mic">Micrófono predeterminado</option>
-        <option value="system">Audio del sistema / pestaña</option>
+        <option value="system">Pestaña / audio del sistema</option>
         <option value="mix">Micrófono + audio del sistema</option>
       </select>
       <button id="btnStart" class="btn start">▶ Iniciar</button>
@@ -53,6 +58,7 @@
           <span data-dom="medico">Médico <b>0%</b></span>
           <span data-dom="legal">Legal <b>0%</b></span>
           <span data-dom="bancario">Bancario <b>0%</b></span>
+          <span data-dom="seguros">Seguros <b>0%</b></span>
         </div>
       </div>
       <div id="transcript" class="transcript" aria-live="polite">
@@ -98,11 +104,11 @@
       <h2>Ajustes</h2>
       <label>Tu nombre (para tarjetas) <input id="cfgName" type="text"></label>
       <label>Tu ID de intérprete <input id="cfgId" type="text"></label>
-      <label class="row"><input id="cfgLocal" type="checkbox"> Reconocimiento en el dispositivo (si el navegador lo soporta)</label>
+      <label class="row"><input id="cfgLocal" type="checkbox"> Motor del navegador: procesar en el dispositivo (si lo soporta)</label>
       <p id="localInfo" class="hint"></p>
 
       <h3>Glosario</h3>
-      <p class="hint">Importa tu vocabulario en CSV (término, traducción, definición, dominio) separado por coma, punto y coma o tabulador. Dominios: medico, legal, bancario, general.</p>
+      <p class="hint">Importa tu vocabulario en CSV (término, traducción, definición, dominio) separado por coma, punto y coma o tabulador. Dominios: medico, legal, bancario, seguros, general.</p>
       <input id="fileGloss" type="file" accept=".csv,.tsv,.txt,.json">
       <textarea id="pasteGloss" rows="4" placeholder="…o pega aquí las filas del CSV"></textarea>
       <label class="row"><input id="cfgReplace" type="checkbox"> Reemplazar el glosario base (si no, se agrega)</label>
