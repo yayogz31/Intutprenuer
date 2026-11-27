@@ -255,3 +255,19 @@ details summary { cursor: pointer; color: var(--acc); font-size: 13px; }
   .trow .meta { order: -2; } .trow .cell.orig { order: -1; }
   .font-ctl { display: none; }
 }
+
+/* ───── Columnas "Original | Translation": izquierda lo que se dijo, derecha la traducción (cualquier dirección) ───── */
+.layout-orig .trow .meta { order: 0; }
+.layout-orig .trow .cell.orig { order: 1; }
+.layout-orig .trow .cell.xl { order: 2; }
+.layout-orig .trow .cell.xl:not(:empty)::before, .layout-orig .trow.interim .cell.xl:not(:empty)::before {
+  content: attr(lang); text-transform: uppercase; font-size: 9.5px; font-weight: 700; letter-spacing: .04em; color: var(--mut);
+  border: 1px solid var(--line2); border-radius: 4px; padding: 0 4px; margin-right: 6px; vertical-align: 2px; font-style: normal; }
+.layout-orig .trow.interim:not(.on) .cell[data-l="en"]::before { content: "Listening…"; }
+#colsMode button { padding: 1px 8px; font-size: 11px; }
+@media (max-width: 1180px) { #colsMode button { padding: 1px 6px; } }
+@media (max-width: 760px) { #colsMode { display: none; } }
+@media (max-width: 1500px) { .meter span:not(.lead) { display: none; } }
+.col-transcript .panel-head { flex-wrap: wrap; row-gap: 4px; }
+.col-transcript .head-actions { flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 1400px) { #colsMode button[data-cols="orig"] { max-width: 120px; overflow: hidden; text-overflow: ellipsis; } }

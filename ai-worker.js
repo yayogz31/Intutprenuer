@@ -16,25 +16,56 @@ env.backends.onnx.wasm.proxy = false;
 env.backends.onnx.wasm.numThreads = self.crossOriginIsolated ? Math.max(1, Math.min(4, ((navigator.hardwareConcurrency || 2) / 2) | 0)) : 1;
 
 const MODEL = "onnx-community/whisper-base";
-let asrPromise = null, mode = "cpu", forceCpu = false;
+const MODEL_SMALL = "onnx-community/whisper-small";   // más preciso; solo en equipos con GPU rápida (fp16)
+let asrPromise = null, mode = "cpu", forceCpu = false, allowSmall = true;
 const queue = [];
 let busy = false;
 
-/** Si la computadora tiene GPU compatible (WebGPU), el codificador de Whisper (la parte pesada) corre ahí:
- *  suele ser 3–10 veces más rápido. El decodificador sigue en el procesador. Si algo falla, se usa solo el procesador. */
-async function gpuConfig() {
+// Los archivos de más de 100 MB se publican divididos en partes (GitHub no acepta archivos mayores).
+// Aquí se interceptan las descargas de esos archivos y se arman de nuevo a partir de sus partes.
+const nativeFetch = self.fetch.bind(self);
+self.fetch = async (input, init) => {
+  const url = typeof input === "string" ? input : (input && input.url) || String(input);
+  if (url.includes("/" + MODEL_SMALL + "/onnx/") && url.endsWith(".onnx") && !(init && init.method === "HEAD")) {
+    const man = await nativeFetch(url + ".parts.json").catch(() => null);
+    if (man && man.ok) {
+      const { parts, size } = await man.json();
+      const bufs = [];
+      for (let i = 0; i < parts; i++) {
+        const r = await nativeFetch(`${url}.part${i}`);
+        if (!r.ok) throw new Error(`missing part ${i} of ${url}`);
+        bufs.push(await r.arrayBuffer());
+      }
+      return new Response(new Blob(bufs), { status: 200, headers: { "Content-Type": "application/octet-stream", "Content-Length": String(size) } });
+    }
+  }
+  return nativeFetch(input, init);
+};
+const exists = async (path) => { try { const r = await nativeFetch(env.localModelPath + path, { method: "HEAD" }); return r.ok; } catch { return false; } };
+
+/** GPU real disponible (no adaptadores "de software") y si soporta fp16. */
+async function gpuInfo() {
   try {
     if (forceCpu || !self.navigator || !navigator.gpu) return null;
     const ad = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
     if (!ad) return null;
-    // los adaptadores "de software" (sin tarjeta de video real) son mucho más lentos que el procesador
     if (ad.isFallbackAdapter || (ad.info && ad.info.isFallbackAdapter) || /swiftshader|llvmpipe|software|basic render/i.test(((ad.info && (ad.info.description + " " + ad.info.architecture + " " + ad.info.vendor)) || ""))) return null;
-    const f16 = ad.features.has("shader-f16");
-    const file = f16 ? "encoder_model_fp16.onnx" : "encoder_model.onnx";
-    const r = await fetch(env.localModelPath + MODEL + "/onnx/" + file, { method: "HEAD" });
-    if (!r.ok) return null;
-    return { device: { encoder_model: "webgpu", decoder_model_merged: "wasm" }, dtype: { encoder_model: f16 ? "fp16" : "fp32", decoder_model_merged: "q8" }, mode: f16 ? "gpu-fp16" : "gpu" };
+    return { f16: ad.features.has("shader-f16") };
   } catch { return null; }
+}
+
+/** Carga un modelo en la GPU y mide su velocidad real; si es lento, lo descarta. */
+async function tryGpu(model, dtypeEnc, progress_callback, limitMs) {
+  let p = null;
+  try {
+    p = await pipeline("automatic-speech-recognition", model, { device: { encoder_model: "webgpu", decoder_model_merged: "wasm" }, dtype: { encoder_model: dtypeEnc, decoder_model_merged: "q8" }, progress_callback });
+    const probe = { language: "english", task: "transcribe", max_new_tokens: 4 };
+    await p(new Float32Array(16000), probe);            // 1.ª vez: compila
+    const t0 = performance.now();
+    await p(new Float32Array(16000), probe);            // 2.ª vez: mide la velocidad real
+    if (performance.now() - t0 > limitMs) throw new Error("GPU slower than expected");
+    return p;
+  } catch (e) { try { if (p && p.dispose) await p.dispose(); } catch { /* */ } return null; }
 }
 
 function getAsr() {
@@ -48,20 +79,21 @@ function getAsr() {
       }
     };
     asrPromise = (async () => {
-      const gpu = await gpuConfig();
+      const gpu = await gpuInfo();
       if (gpu) {
-        let p = null;
-        try {
-          p = await pipeline("automatic-speech-recognition", MODEL, { device: gpu.device, dtype: gpu.dtype, progress_callback });
-          const probe = { language: "english", task: "transcribe", max_new_tokens: 4 };
-          await p(new Float32Array(16000), probe);            // 1.ª vez: compila
-          const t0 = performance.now();
-          await p(new Float32Array(16000), probe);            // 2.ª vez: mide la velocidad real
-          if (performance.now() - t0 > 1500) throw new Error("GPU slower than expected");  // GPU débil → procesador
-          mode = gpu.mode;
-          return p;
-        } catch (e) { forceCpu = true; try { if (p && p.dispose) await p.dispose(); } catch { /* */ } }
+        // 1) Whisper small en GPU (el más preciso) — solo con fp16 y si los archivos están publicados
+        if (allowSmall && gpu.f16 && await exists(MODEL_SMALL + "/onnx/encoder_model_fp16.onnx.parts.json")) {
+          const p = await tryGpu(MODEL_SMALL, "fp16", progress_callback, 1800);
+          if (p) { mode = "gpu-small"; return p; }
+        }
+        // 2) Whisper base en GPU
+        if (await exists(MODEL + "/onnx/" + (gpu.f16 ? "encoder_model_fp16.onnx" : "encoder_model.onnx"))) {
+          const p = await tryGpu(MODEL, gpu.f16 ? "fp16" : "fp32", progress_callback, 1500);
+          if (p) { mode = gpu.f16 ? "gpu-fp16" : "gpu"; return p; }
+        }
+        forceCpu = true;
       }
+      // 3) Whisper base en el procesador
       mode = "cpu";
       return pipeline("automatic-speech-recognition", MODEL, { device: "wasm", dtype: { encoder_model: "q8", decoder_model_merged: "q8" }, progress_callback });
     })().catch((e) => { asrPromise = null; throw e; });
@@ -136,6 +168,7 @@ async function pump() {
 self.onmessage = (e) => {
   const m = e.data || {};
   if (m.type === "load") {
+    if (m.allowSmall === false) allowSmall = false;
     if (m.threads) env.backends.onnx.wasm.numThreads = self.crossOriginIsolated ? Math.max(1, Math.min(m.threads, navigator.hardwareConcurrency || 2)) : 1;
     getAsr().then(() => self.postMessage({ type: "ready", mode }), (err) => self.postMessage({ type: "error", error: String((err && err.message) || err) }));
   } else if (m.type === "asr") {

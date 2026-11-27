@@ -31,6 +31,19 @@ Botones **Iniciar**, **Pausar/Reanudar** y **Terminar**. Atajos: `Alt+S`, `Alt+P
 
 Si hay tarjeta de video compatible, Whisper la usa; si es débil, usa el procesador.
 
+## Columnas: Original → Translation
+
+Por defecto, **la columna izquierda muestra lo que se dijo** (en inglés o en español) y **la derecha su traducción**, sin importar la dirección. La columna de la traducción indica el idioma de destino (EN/ES). Con el selector **EN | ES** del encabezado puedes volver al modo de columnas fijas (inglés a la izquierda, español a la derecha).
+
+## Whisper small en equipos con GPU
+
+Si tu tarjeta de video es compatible (WebGPU con fp16) y pasa una prueba de velocidad, la corrección usa **Whisper small**, bastante más preciso que el estándar (sobre todo en español y en palabras comunes). Ejemplo con la misma grabación:
+
+- Estándar: *"There are a driver crashed into my fender and I need a total truck."*
+- Small: *"The other driver crashed into my fender, and I need a tow truck."*
+
+La primera vez descarga ~330 MB (luego queda guardado). Si la GPU no es suficientemente rápida, se usa el modelo estándar automáticamente. Se puede desactivar en ⚙. Sus archivos se publican divididos en partes de menos de 100 MB (límite de GitHub) y el navegador los vuelve a unir.
+
 ## Pausas y precisión
 
 - **Las pausas ya no cortan la información:** los pedazos de una misma oración separados por pausas cortas se unen en una sola fila, y la traducción se hace sobre la oración completa. No se unen si lo anterior era una pregunta o si lo nuevo empieza como respuesta ("yes", "no", "sí"…), para respetar los turnos.

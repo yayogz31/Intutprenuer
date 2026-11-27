@@ -49,7 +49,7 @@
   }
 
   // ───────────────── Configuración (solo preferencias, nunca texto de llamadas) ─────────────────
-  const cfg = Object.assign({ name: "", id: "", local: false, lang: "auto", source: "mic", engine: "vosk", translate: true, audience: "provider", precise: true, mask: true, fontSize: 15, collapsed: {}, perf: "auto" }, store.get("inturp.cfg", {}));
+  const cfg = Object.assign({ name: "", id: "", local: false, lang: "auto", source: "mic", engine: "vosk", translate: true, audience: "provider", precise: true, mask: true, fontSize: 15, collapsed: {}, perf: "auto", whisperSmall: true, cols: "orig" }, store.get("inturp.cfg", {}));
 
   // ───────────────── Perfil de rendimiento (se adapta a cada dispositivo) ─────────────────
   // Lite: sin Whisper, menos trabajo en vivo (equipos modestos).  Balanced: Whisper solo corrige frases dudosas.
@@ -421,14 +421,14 @@
       try { ai = new Worker("ai-worker.js", { type: "module" }); } catch { aiFailed = true; return null; }
       ai.onmessage = onAiMessage;
       ai.onerror = () => { aiFailed = true; ai = null; };
-      ai.postMessage({ type: "load", threads: P().threads });
+      ai.postMessage({ type: "load", threads: P().threads, allowSmall: cfg.whisperSmall !== false });
     }
     return ai;
   }
   function onAiMessage(e) {
     const m = e.data || {};
     if (m.type === "progress") { if (m.pct < 100) notice(`Downloading the high-accuracy model (one time only, ~${m.mb} MB)… ${m.pct}%`); }
-    else if (m.type === "ready") { aiReady = true; aiMode = m.mode || ""; notice(""); toast(`High-accuracy mode ready${/gpu/.test(m.mode) ? " · using GPU" : ""}`, 2500); }
+    else if (m.type === "ready") { aiReady = true; aiMode = m.mode || ""; notice(""); toast(`High-accuracy mode ready${m.mode === "gpu-small" ? " · Whisper small on GPU" : /gpu/.test(m.mode) ? " · using GPU" : ""}`, 3000); }
     else if (m.type === "error" && !m.id) { aiFailed = true; notice("High-accuracy mode is not available in this browser; using the fast transcript only."); setTimeout(() => notice(""), 6000); }
     else if (m.type === "asr" || m.type === "error") {
       const job = aiJobs.get(m.id); aiJobs.delete(m.id);
@@ -766,6 +766,7 @@
       const box = $("interim"); box.classList.add("on");
       const o = box.querySelector(`.cell[data-l="${lang}"]`), x = box.querySelector(`.cell[data-l="${lang === "es" ? "en" : "es"}"]`);
       o.classList.add("orig"); o.classList.remove("xl"); x.classList.add("xl"); x.classList.remove("orig");
+      o.setAttribute("lang", lang); x.setAttribute("lang", lang === "es" ? "en" : "es");
       o.innerHTML = a.html + " …";
       // términos y sugerencias en vivo, sin esperar a que termine la frase
       let changed = false; const now = Date.now();
@@ -1395,6 +1396,15 @@
     }, { passive: true });
     $("transcript").addEventListener("click", (e) => { const b = e.target.closest(".trow .lang"); if (b) flipRowLang(b.closest(".trow")); });
     $("jumpLive").onclick = () => { const t = $("transcript"); pinned = true; unseenRows = 0; t.scrollTop = t.scrollHeight; updateJump(); };
+    // columnas: "orig" = izquierda lo que se dijo (cualquier idioma), derecha la traducción; "lang" = English | Español
+    const applyCols = () => {
+      const orig = cfg.cols !== "lang";
+      $("trPanel").classList.toggle("layout-orig", orig); $("trPanel").classList.toggle("layout-lang", !orig);
+      $("colLeft").textContent = orig ? "Original" : "English"; $("colRight").textContent = orig ? "Translation" : "Español";
+      for (const b of $("colsMode").children) b.classList.toggle("on", b.dataset.cols === (orig ? "orig" : "lang"));
+    };
+    applyCols();
+    $("colsMode").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; cfg.cols = b.dataset.cols; saveCfg(); applyCols(); };
     // tamaño de letra de la transcripción (accesibilidad)
     const applyFont = () => { document.documentElement.style.setProperty("--tsize", cfg.fontSize + "px"); };
     applyFont();
@@ -1436,6 +1446,8 @@
     const perfText = () => { const d = detectPerf(); $("perfInfo").textContent = `This device: ${navigator.hardwareConcurrency || "?"} CPU cores${navigator.deviceMemory ? ", ~" + navigator.deviceMemory + " GB RAM" : ""} → ${cfg.perf === "auto" ? "using " + PERF[d].label : PERF[perfKey()].label + " (manual)"}. Lite skips the high-accuracy engine; Balanced only checks unclear sentences.`; };
     $("cfgPerf").value = PERF[cfg.perf] ? cfg.perf : "auto"; perfText();
     $("cfgPerf").onchange = (e) => { cfg.perf = e.target.value; saveCfg(); perfText(); if (P().whisper !== "off" && cfg.precise && state !== "idle") getAi(); };
+    $("cfgSmall").checked = cfg.whisperSmall !== false;
+    $("cfgSmall").onchange = (e) => { cfg.whisperSmall = e.target.checked; saveCfg(); toast("Applies the next time the high-accuracy engine loads (reload the page)", 3500); };
     $("cfgMask").checked = cfg.mask;
     $("cfgMask").onchange = (e) => { cfg.mask = e.target.checked; saveCfg(); if (session) renderKeys(); };
     $("btnCopyNotes").onclick = () => $("notes").value.trim() && copy($("notes").value);
