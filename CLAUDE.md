@@ -1,7 +1,7 @@
 # CLAUDE.md — Inturpreneur
 
 Asistente para intérpretes telefónicos (inglés ⇄ español). Transcribe en vivo, traduce *meaning for meaning*, resalta datos clave, sugiere respuestas y muestra tarjetas y terminología.
-Hoy es una página en GitHub Pages (`yayogz31/Intutprenuer`). La siguiente etapa es una **aplicación de escritorio para Windows** que reutiliza esta misma página como interfaz.
+Hoy es una página en GitHub Pages (`yayogz31/Intutprenuer`). La siguiente etapa es una **aplicación de escritorio para Windows, interna y local, que reemplaza a la página**. El código de la página se reutiliza como interfaz, pero va **dentro** de la app.
 
 Responde siempre al usuario **en español**, claro y sin tecnicismos innecesarios. El usuario prueba en Windows 11 con Opera y no programa: explícale qué probar y cómo, paso a paso.
 
@@ -21,7 +21,10 @@ Si una tarea parece pedir romper alguna de estas reglas, detente y pregunta.
 4. **Ligera.** El instalador y el ejecutable deben pesar poco (meta: < 30 MB).
    - Los modelos se descargan **una sola vez** en el primer uso, con barra de progreso, y quedan en `%LOCALAPPDATA%\Inturpreneur\models`.
    - Nunca se meten los modelos dentro del ejecutable.
-5. **La página sigue funcionando sola.** La app de escritorio se suma a la página; no la reemplaza. Lo que se mejore en la interfaz debe servir en ambas.
+5. **La app reemplaza a la página.** La app no carga nada de internet para funcionar: la interfaz va empaquetada dentro.
+   - La única conexión permitida es la descarga única de los modelos y la búsqueda de actualizaciones, y esta última solo cuando el usuario pulse "Check for updates".
+   - Ninguna de las dos envía datos del usuario.
+   - Cuando la app funcione bien, se retira la página de GitHub Pages, por decisión del usuario.
 6. **Verificar antes de entregar.** Nada se entrega sin probarlo primero (ver §6). Reporta los resultados con honestidad, incluido lo que falló o no se pudo probar.
 
 ## 2. Preferencias del usuario sobre el resultado
@@ -86,27 +89,25 @@ Claves de `localStorage`: `inturp.cfg`, `inturp.fixes`, `inturp.myterms`, `intur
 
 ### Arquitectura
 
-- **Interfaz.** La misma página, cargada en una ventana nativa (WebView2, que ya viene en Windows 11).
-  - Carga la versión publicada en GitHub Pages, así **los arreglos de interfaz llegan solos** sin reinstalar.
-  - Guarda una copia local de respaldo para funcionar sin internet.
-  - Bajar el código de la página no envía ningún dato del usuario.
+- **Interfaz.** El código de la página (HTML, JS y CSS), **empaquetado dentro de la app** y mostrado en una ventana nativa (WebView2, que ya viene en Windows 11).
+  - No se carga nada desde GitHub Pages ni desde otro sitio.
+  - Sin service worker ni COOP/COEP: Tauri sirve los archivos localmente.
 - **Núcleo nativo** pequeño, en Rust con **Tauri 2**:
   - Captura el **audio del sistema** con WASAPI loopback (sin "Stereo Mix" ni cables virtuales) y también el micrófono.
   - Reconocimiento con **whisper.cpp** (`whisper-rs`) con backend **Vulkan**, que funciona en la GTX 1650 Ti sin instalar CUDA. Respaldo en CPU.
     - Modelo principal: `ggml-large-v3-turbo-q5_0` (~550 MB) en GPU.
     - Modelo rápido para el texto inmediato: `ggml-base` o `small` q5.
     - Ambos se descargan una vez desde Hugging Face y se verifican con SHA-256.
-  - Se comunica con la página por un WebSocket en `127.0.0.1` con un token aleatorio por arranque.
-    - Así la misma página también usa el motor de escritorio desde Opera: opción de motor "Desktop app" en Settings.
-    - Hay que agregar `ws://127.0.0.1:*` a `connect-src` de la CSP.
-    - Nunca abrir puertos fuera de localhost.
+  - Se comunica con la interfaz por el IPC interno de Tauri (eventos y comandos). **No abre puertos de red**, ni siquiera en localhost.
+  - Los motores del navegador (Vosk WASM y Whisper con transformers.js) se quitan cuando el motor nativo los supere. No se mantienen dos caminos.
 - **Traducción.**
   - Primero Bergamot dentro de la página, como hoy.
   - Opcional después: un modelo más grande que corra local, como CTranslate2 o un opus-mt mejor. Solo si se mantiene ligero y gratuito.
-- **Actualizaciones.** Toda la app es una sola instalación.
-  - La interfaz se actualiza sola desde Pages.
-  - El núcleo nativo, que casi no cambia, se actualiza en su lugar con el updater de Tauri, firmado y publicado en GitHub Releases.
-  - Los modelos y la configuración se conservan. Nunca se piden descargas repetidas.
+- **Actualizaciones.** Toda la app es una sola instalación y nunca hay "versiones" paralelas.
+  - El usuario pulsa **Check for updates** y el updater de Tauri, firmado y publicado en GitHub Releases, reemplaza la app en su mismo lugar.
+  - Solo se baja la app, que es pequeña. Los modelos, el vocabulario, las tarjetas y la configuración se conservan.
+  - Nunca se vuelven a descargar modelos.
+  - El updater no revisa automáticamente en segundo plano.
 - **Build.** GitHub Actions con `windows-latest` genera el instalador (NSIS o MSI) y lo publica en Releases. El usuario no compila nada.
 
 ### Recursos del equipo del usuario
@@ -118,7 +119,7 @@ Windows 11, GTX 1650 Ti (4 GB VRAM), i5 y 32 GB de RAM.
 
 ### Sesiones planeadas (meta: 2 o 3)
 
-1. **Núcleo funcional.** Tauri, captura loopback, whisper.cpp Vulkan, WebSocket y la opción "Desktop app" en la página. Builds en Actions y pruebas automáticas (§6).
+1. **Núcleo funcional.** Tauri, la interfaz empaquetada, captura loopback, whisper.cpp con Vulkan e IPC. Builds en Actions y pruebas automáticas (§6).
 2. **Ajustes reales.** Arreglos tras la prueba del usuario, mejor traducción y descarga de modelos pulida.
 3. **Pulido.** Rediseño Material 3 completo, instalador, updater y textos.
 
@@ -143,7 +144,8 @@ Windows 11, GTX 1650 Ti (4 GB VRAM), i5 y 32 GB de RAM.
 
 **Núcleo de escritorio**, antes de darle algo al usuario:
 1. Compilar y probar el núcleo en Linux (CPU) dentro del contenedor, con los mismos audios y midiendo WER y latencia.
-2. Conectar la página real por WebSocket con Playwright y verificar el flujo completo: Start → texto → corrección → traducción → End/wipe.
+2. Probar la interfaz real conectada al núcleo y verificar el flujo completo: Start → texto → corrección → traducción → End/wipe. Para esta prueba, servir la interfaz con un puente de prueba temporal en el contenedor y manejarla con Playwright. Ese puente no forma parte de la app.
+   - Además, confirmar con un monitor de red que la app no hace ninguna conexión durante una llamada.
 3. Compilar en GitHub Actions para Windows y correr una prueba de humo en CPU, porque el runner no tiene GPU: arranque, carga del modelo, transcripción de un WAV y cierre.
 4. Solo después, el usuario prueba en su laptop con GPU. Analizamos juntos el resultado y su diagnóstico ("Copy diagnostics" en Settings) y decidimos qué mejorar.
 
