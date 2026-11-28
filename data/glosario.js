@@ -395,5 +395,6 @@ window.TRADUCCIONES_PREFERIDAS = [
   { en: "comprehensive insurance / comprehensive coverage", es: "seguro contra todo riesgo, cobertura contra todo riesgo" },
   { en: "full coverage / full coverage insurance", es: "cobertura completa, seguro de cobertura completa" },
   { en: "adjuster / claims adjuster", es: "perito de seguros, perito de seguros" },
+  { en: "medication / medications", es: "medicación, medicamentos" },
   { en: "LEP / LEP caller / LEP patient / limited English proficient / limited English proficiency", es: "LEP, persona LEP, paciente LEP, una persona con dominio limitado del inglés, dominio limitado del inglés" },
 ];

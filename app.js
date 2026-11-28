@@ -148,10 +148,12 @@
     const cands = prefCandidates(from);
     if (!cands.length || !out) return out;
     const n = strip(src);
-    const done = new Set();
+    const done = new Set(), used = [];
     for (const c of cands) {
       if (!looseRe(c.v).test(src) || done.has(strip(c.want))) continue;
-      done.add(strip(c.want));
+      // "medication" no se aplica si ya se aplicó "brand name medication"
+      if (used.some((u) => looseRe(c.v).test(u))) continue;
+      done.add(strip(c.want)); used.push(c.v);
       const srcTerm = c.v, want = c.want;
       if (strip(out).includes(strip(want))) continue;
       const mt = await mtRendering(srcTerm, from);
@@ -162,6 +164,41 @@
       // los traductores suelen dejar acrónimos y nombres sin traducir: si el término aparece tal cual, se cambia
       const same = new RegExp(`(?<![\\p{L}])${reEsc(srcTerm).replace(/\s+/g, "[\\s.]*")}(?![\\p{L}])`, "iu");
       if (same.test(out)) out = out.replace(same, want);
+    }
+    return from === "en" ? fixArticles(out, cands) : out;
+  }
+  /** Concordancia de género en español: si el término preferido es femenino ("medicación") y el traductor
+   *  dejó "el/un/del/al/este" delante, se corrige ("la medicación"), y al revés para los masculinos. */
+  function nounGender(w) {
+    const x = strip(w.split(/\s+/)[0]);
+    if (/^(problema|sistema|programa|dia|mapa|idioma|tema|clima)s?$/.test(x)) return "m";
+    if (/(cion|sion|dad|tad|tud|umbre|ez|a)s?$/.test(x)) return "f";
+    if (/(o|or|ento|aje|an)s?$/.test(x)) return "m";
+    return "";
+  }
+  // determinantes por forma: [masc. sing., fem. sing., masc. pl., fem. pl.]
+  const DETS = [["el", "la", "los", "las"], ["un", "una", "unos", "unas"], ["del", "de la", "de los", "de las"], ["al", "a la", "a los", "a las"],
+    ["este", "esta", "estos", "estas"], ["ese", "esa", "esos", "esas"], ["aquel", "aquella", "aquellos", "aquellas"], ["su", "su", "sus", "sus"],
+    ["mi", "mi", "mis", "mis"], ["tu", "tu", "tus", "tus"], ["nuestro", "nuestra", "nuestros", "nuestras"], ["todo", "toda", "todos", "todas"],
+    ["otro", "otra", "otros", "otras"], ["nuevo", "nueva", "nuevos", "nuevas"], ["mismo", "misma", "mismos", "mismas"], ["mucho", "mucha", "muchos", "muchas"],
+    ["poco", "poca", "pocos", "pocas"], ["primer", "primera", "primeros", "primeras"], ["cualquier", "cualquier", "cualesquiera", "cualesquiera"]];
+  const DET_OF = new Map(); DETS.forEach((row) => row.forEach((f) => { if (!DET_OF.has(f)) DET_OF.set(f, row); }));
+  const DET_RE = [...DET_OF.keys()].sort((a, b) => b.length - a.length).map(reEsc).join("|");
+  function fixArticles(out, cands) {
+    if (!out) return out;
+    const wants = [...new Set(cands.map((c) => c.want))].filter((w) => /^[a-záéíóúñü]/i.test(w) && !/^[A-Z]{2,}/.test(w) && out.toLowerCase().includes(w.toLowerCase()));
+    for (const w of wants) {
+      const g = nounGender(w); if (!g) continue;
+      const plural = /s$/i.test(strip(w.split(/\s+/)[0]));
+      const k = (g === "f" ? 1 : 0) + (plural ? 2 : 0);
+      // hasta dos determinantes seguidos delante del término ("todos sus medicamentos")
+      const re = new RegExp(`(?<![\\p{L}])((?:(?:${DET_RE})\\s+){1,2})(${reEsc(w)})(?![\\p{L}])`, "giu");
+      out = out.replace(re, (m, dets, term) => dets.replace(new RegExp(`(?<![\\p{L}])(${DET_RE})(?![\\p{L}])`, "giu"), (d) => {
+        const row = DET_OF.get(d.toLowerCase()); if (!row) return d;
+        let r = row[k];
+        if (d[0] !== d[0].toLowerCase()) r = r.charAt(0).toUpperCase() + r.slice(1);
+        return r;
+      }) + term);
     }
     return out;
   }
@@ -473,6 +510,7 @@
       if (out && holders.every((h) => new RegExp(`\\b${h.tok}\\b`, "i").test(out))) {
         for (const h of holders) out = out.replace(new RegExp(`\\b${h.tok}\\b`, "gi"), h.want);
         if (from === "es") out = out.replace(/\b([Aa]) (?=[aeiouAEIOU])/g, "$1n ");   // "a adjuster" → "an adjuster"
+        else out = fixArticles(out, holders);
         return out;
       }
     }

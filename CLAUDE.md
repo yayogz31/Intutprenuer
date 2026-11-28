@@ -170,6 +170,33 @@ Windows 11, GTX 1650 Ti (4 GB VRAM), i5 y 32 GB de RAM.
 2. **Ajustes reales.** Arreglos tras la prueba del usuario, mejor traducción y descarga de modelos pulida.
 3. **Pulido.** Rediseño Material 3 completo, instalador, updater y textos.
 
+## 4a. La app es la página, pero mejor (pedido del usuario)
+
+Todo lo que hace la página se conserva y, además:
+
+- **Precisión.**
+  - Whisper large-v3-turbo en la GPU como motor principal.
+  - Antes de cada frase se le da a Whisper un `initial_prompt` con las últimas frases y los términos del glosario y de la lista de medicamentos más relevantes para la llamada. Así reconoce mejor la terminología y el contexto.
+- **No cortar oraciones.**
+  - Segmentar con VAD más puntuación.
+  - Una frase que se pausa a la mitad se une con su continuación en la misma fila. Nunca se pierde el final ni el inicio.
+  - Probar con pausas largas en medio de números y nombres.
+- **Entender el contexto.**
+  - El dominio de la llamada (médica, seguros, banco, legal) se detecta y guía la corrección y la traducción. Ejemplos: claim y no game, assessor y no accessor, project y no proxy.
+- **Identificar bien:** números, montos, fechas, horas, lugares (ciudades, estados, direcciones), nombres, SSN, pólizas y **medicamentos con su dosis** ("metformin 500 mg twice a day").
+  - Resaltarlos en Key info.
+  - Nunca perder ni inventar dígitos.
+- **Medicamentos como terminología.**
+  - Lista de los medicamentos más comunes en EE. UU. (genérico y marca, por ejemplo acetaminophen/Tylenol e ibuprofen/Advil), con definición corta en inglés y su nombre en español.
+  - También vías, formas y frecuencias: tablet, capsule, inhaler, twice a day, as needed, on an empty stomach, etc.
+  - Va en un archivo propio, `data/medicamentos.js`, aparte de la lista del usuario.
+- **La palabra correcta.**
+  - "medication" → "medicación" y "medications" → "medicamentos". Nunca "medicina".
+  - Respetar siempre `TRADUCCIONES_PREFERIDAS` y el vocabulario del usuario, con concordancia de género y número ("la medicación", "sus medicamentos").
+- **Traducción muy acorde al contexto (*meaning for meaning*).**
+  - Evaluar en la sesión 2, con un set de frases reales de seguros, médicas, banco y legales: Bergamot frente a un traductor local mejor (por ejemplo NLLB/opus-mt con CTranslate2) frente a un LLM pequeño local en CPU (GGUF con llama.cpp, ~1.5B–3B q4) que reciba las frases anteriores como contexto.
+  - Elegir el que traduzca mejor sin pasarse de las metas de RAM/VRAM. Si el mejor usa más memoria, ofrecerlo como opción "Context translation" con su costo indicado.
+
 ## 4b. Nivel de calidad: app profesional
 
 - Debe sentirse como un producto terminado, no como un prototipo.
