@@ -118,6 +118,11 @@ Windows 11, GTX 1650 Ti (4 GB VRAM), i5 y 32 GB de RAM.
   - Un solo modelo cargado en la GPU; el modelo rápido va en CPU.
   - Contexto y lote mínimos.
   - Medirlo y reportar la cifra real.
+- **Meta de RAM: < 1 GB en total durante la llamada**, sin contar la VRAM. Al presionar End, la memoria vuelve a cerca de 150 MB.
+  - Ventana con WebView2: ~150 MB.
+  - Modelo rápido en CPU: ~300 MB.
+  - Traductor: ~200 MB.
+  - Medirlo y reportar la cifra real.
 - Procesar por frases con VAD; nunca correr el modelo en bucle sobre silencio.
 - Modo de bajo consumo cuando no hay voz.
 - **La GPU es del usuario fuera de las llamadas.** Practica con Blender y Unity en sus descansos.
