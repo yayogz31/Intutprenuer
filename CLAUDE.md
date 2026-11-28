@@ -113,7 +113,11 @@ Claves de `localStorage`: `inturp.cfg`, `inturp.fixes`, `inturp.myterms`, `intur
 ### Recursos del equipo del usuario
 
 Windows 11, GTX 1650 Ti (4 GB VRAM), i5 y 32 GB de RAM.
-- Mantener el uso de VRAM por debajo de unos 2.5 GB.
+- **Meta de VRAM: ~1 GB, máximo 1.5 GB.** El usuario lo pidió explícitamente.
+  - Modelo cuantizado (q5_0, o q4 si alcanza la precisión) y flash attention.
+  - Un solo modelo cargado en la GPU; el modelo rápido va en CPU.
+  - Contexto y lote mínimos.
+  - Medirlo y reportar la cifra real.
 - Procesar por frases con VAD; nunca correr el modelo en bucle sobre silencio.
 - Modo de bajo consumo cuando no hay voz.
 - **La GPU es del usuario fuera de las llamadas.** Practica con Blender y Unity en sus descansos.
