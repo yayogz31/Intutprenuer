@@ -158,7 +158,7 @@ async function pump() {
     while (queue.length > 3) { const old = queue.shift(); self.postMessage({ type: "asr", id: old.id, text: "", skipped: true }); }
     const job = queue.shift();
     // con trabajo pendiente, las frases que el motor rápido ya entendió con mucha seguridad se saltan
-    if (queue.length && job.conf >= 0.9 && !job.detect) { self.postMessage({ type: "asr", id: job.id, text: "", skipped: true }); continue; }
+    if (queue.length && job.conf >= 0.93 && !job.detect) { self.postMessage({ type: "asr", id: job.id, text: "", skipped: true }); continue; }
     try { await run(job); }
     catch (e) {
       if (mode !== "cpu") { forceCpu = true; asrPromise = null; try { await run(job); continue; } catch { /* */ } }

@@ -56,7 +56,7 @@
   // Max: Whisper corrige todas las frases. "auto" elige según núcleos y memoria del equipo.
   const PERF = {
     lite:     { label: "Lite",     whisper: "off", interimMs: 150, interimTrMs: 1200, threads: 1 },
-    balanced: { label: "Balanced", whisper: "low", interimMs: 80,  interimTrMs: 550,  threads: 2 },
+    balanced: { label: "Balanced", whisper: "low", interimMs: 80,  interimTrMs: 550,  threads: 3 },
     max:      { label: "Max",      whisper: "all", interimMs: 40,  interimTrMs: 250,  threads: 4 },
   };
   function detectPerf() {
@@ -487,15 +487,17 @@
     const isNum = (w) => window.KeyInfo && KeyInfo.numberGroups(w).length > 0;
     const sure = (part.vwords ? part.vwords.filter((x) => (x.conf || 0) >= 0.9).map((x) => strip(x.word)) : wo).filter((w) => !isNum(w) && w.length > 1);
     const have = new Set(wn);
-    const near = (w) => have.has(w) || (w.length >= 4 && wn.some((x) => Math.abs(x.length - w.length) <= 1 && lev(x, w) <= 1));
-    if (sure.length >= 2 && sure.filter(near).length / sure.length < 0.75) return false;   // dejó fuera palabras seguras
+    // palabra conservada, o cambiada por otra que suena parecido (corrección por contexto: "proxy" → "project")
+    const near = (w) => have.has(w) || wn.some((x) => (w.length >= 4 && Math.abs(x.length - w.length) <= 2 && lev(x, w) <= 2) || (w.length >= 3 && x.length >= 3 && x.slice(0, 3) === w.slice(0, 3)));
+    const missing = sure.filter((w) => !near(w)).length;
+    if (missing > Math.max(1, Math.round(sure.length * 0.34))) return false;   // dejó fuera demasiadas palabras seguras
     if (!part.vwords && wn.length < wo.length * 0.7) return false;
     const dOld = digitsOf(part.text), dNew = digitsOf(newText);
     if (dOld.length >= 2 && !dNew.includes(dOld)) return false;                // perdió o cambió números
     return true;
   }
   function lev(a, b) {
-    const m = a.length, n = b.length; if (Math.abs(m - n) > 1) return 2;
+    const m = a.length, n = b.length; if (Math.abs(m - n) > 2) return 3;
     const d = Array.from({ length: m + 1 }, (_, i) => [i]);
     for (let j = 1; j <= n; j++) d[0][j] = j;
     for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
@@ -674,7 +676,7 @@
 
     // corrección con Whisper: en Max todas las frases; en Balanced solo las que el motor rápido no entendió bien
     const gpuFast = /gpu/.test(aiMode);
-    const needs = P().whisper === "all" || gpuFast || (P().whisper === "low" && (conf === undefined || conf === null || conf < LOW_CONF || opts.ambiguous));
+    const needs = P().whisper !== "off";   // Balanced/Max: Whisper revisa todas; si se acumula trabajo, el worker se salta las que el motor rápido entendió con mucha seguridad
     if (needs && audio && audio.length > 8000 && cfg.precise && aiReady && getAi() && !numericMostly(text)) {
       const id = ++aiSeq;
       aiJobs.set(id, { row, part, lang, terms: part.terms });
@@ -1561,7 +1563,7 @@
       if (!list.length) return;
       addToNotes(list.map(keyLine).join("\n")); toast("Key information added to notes");
     };
-    const perfText = () => { const d = detectPerf(); $("perfInfo").textContent = `This device: ${navigator.hardwareConcurrency || "?"} CPU cores${navigator.deviceMemory ? ", ~" + navigator.deviceMemory + " GB RAM" : ""} → ${cfg.perf === "auto" ? "using " + PERF[d].label : PERF[perfKey()].label + " (manual)"}. Lite skips the high-accuracy engine; Balanced only checks unclear sentences.`; };
+    const perfText = () => { const d = detectPerf(); $("perfInfo").textContent = `This device: ${navigator.hardwareConcurrency || "?"} CPU cores${navigator.deviceMemory ? ", ~" + navigator.deviceMemory + " GB RAM" : ""} → ${cfg.perf === "auto" ? "using " + PERF[d].label : PERF[perfKey()].label + " (manual)"}. Lite skips the high-accuracy engine; Balanced checks sentences when it has time; Max checks every sentence and confirms the language.`; };
     $("cfgPerf").value = PERF[cfg.perf] ? cfg.perf : "auto"; perfText();
     $("cfgPerf").onchange = (e) => { cfg.perf = e.target.value; saveCfg(); perfText(); if (P().whisper !== "off" && cfg.precise && state !== "idle") getAi(); };
     $("btnResetCards").onclick = () => { if (confirm("Restore all built-in cards to their original text (your own cards are kept)?")) { cardOverrides = {}; saveCustomCards(); toast("Built-in cards restored"); } };
