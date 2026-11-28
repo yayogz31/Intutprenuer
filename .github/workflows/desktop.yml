@@ -73,7 +73,18 @@ jobs:
 
       - name: Compilar e instalar en un paquete (NSIS)
         working-directory: desktop/app
-        run: npx --yes @tauri-apps/cli@2 build
+        shell: pwsh
+        run: |
+          npx --yes @tauri-apps/cli@2 build *>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\build.log" | Out-Null
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            # solo las líneas útiles para diagnosticar (sin las advertencias de CMake)
+            Select-String -Path "$env:RUNNER_TEMP\build.log" -Pattern "error|failed|fatal|cannot|not found|No such" -CaseSensitive:$false |
+              Where-Object { $_.Line -notmatch "CMake Warning|Wno-|Werror|error_callback|ERROR_" } | Select-Object -First 80 | ForEach-Object { $_.Line }
+            Get-Content "$env:RUNNER_TEMP\build.log" -Tail 25
+            exit $code
+          }
+          Get-Content "$env:RUNNER_TEMP\build.log" -Tail 15
 
       - name: Tamaños
         shell: pwsh
