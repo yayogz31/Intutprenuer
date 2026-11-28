@@ -491,11 +491,23 @@
   function setEngineChip(text, kind) { const c = $("engineChip"); c.textContent = text; c.className = "engine-chip " + (kind || ""); c.hidden = !text; }
   function renderEngineInfo() {
     const d = aiDiag;
-    if (!d) return;
+    if (!d) { $("engineInfo").textContent = `High-accuracy engine starts when you press Start. GPU (page): ${pageGpu}.`; return; }
     if (d.final) setEngineChip(d.final, /small/.test(d.final) ? "best" : /failed/.test(d.final) ? "bad" : "");
     const tried = (d.tried || []).map((t) => `${t.model}${t.enc ? " (" + t.enc + ")" : ""}: ${t.ok ? "OK, " + t.ms + " ms" : "not used — " + t.err}`).join(" · ");
-    $("engineInfo").textContent = `In use: ${d.final || "loading…"}. GPU: ${d.gpu}.${tried ? " Tried: " + tried + "." : ""}`;
+    $("engineInfo").textContent = `In use: ${d.final || "loading…"}. GPU (worker): ${d.gpu}. GPU (page): ${pageGpu}.${tried ? " Tried: " + tried + "." : ""}`;
   }
+  // ¿La página (no el worker) ve la GPU? Si la página sí y el worker no, el navegador limita WebGPU en workers.
+  let pageGpu = "checking…";
+  (async () => {
+    try {
+      if (!navigator.gpu) { pageGpu = "WebGPU not available"; return; }
+      const ad = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+      if (!ad) { pageGpu = "no adapter"; return; }
+      const i = ad.info || {};
+      pageGpu = ([i.vendor, i.architecture, i.device, i.description].filter(Boolean).join(" ") || "GPU found") + (ad.features.has("shader-f16") ? " · fp16" : " · no fp16");
+    } catch (e) { pageGpu = "error: " + ((e && e.message) || e); }
+    renderEngineInfo();
+  })();
   const aiJobs = new Map();
   function getAi() {
     if (!cfg.precise || aiFailed || P().whisper === "off" || typeof Worker === "undefined") return null;
@@ -1664,6 +1676,11 @@
     $("cfgPerf").value = PERF[cfg.perf] ? cfg.perf : "auto"; perfText();
     $("cfgPerf").onchange = (e) => { cfg.perf = e.target.value; saveCfg(); perfText(); if (P().whisper !== "off" && cfg.precise && state !== "idle") getAi(); };
     $("btnResetCards").onclick = () => { if (confirm("Restore all built-in cards to their original text (your own cards are kept)?")) { cardOverrides = {}; saveCustomCards(); toast("Built-in cards restored"); } };
+    $("btnCopyDiag").onclick = () => {
+      const info = [`Inturpreneur diagnostics`, `Browser: ${navigator.userAgent}`, `CPU cores: ${navigator.hardwareConcurrency || "?"} · RAM: ${navigator.deviceMemory || "?"} GB · Profile: ${PERF[perfKey()].label}`,
+        `Cross-origin isolated: ${self.crossOriginIsolated}`, $("engineInfo").textContent].join("\n");
+      copy(info);
+    };
     $("cfgSmall").checked = cfg.whisperSmall !== false;
     $("cfgSmall").onchange = (e) => { cfg.whisperSmall = e.target.checked; saveCfg(); toast("Applies the next time the high-accuracy engine loads (reload the page)", 3500); };
     $("cfgMask").checked = cfg.mask;
