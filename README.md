@@ -31,6 +31,12 @@ Botones **Iniciar**, **Pausar/Reanudar** y **Terminar**. Atajos: `Alt+S`, `Alt+P
 
 Si hay tarjeta de video compatible, Whisper la usa; si es débil, usa el procesador.
 
+## El español se muestra como español
+
+En modo Auto, Whisper confirma el idioma de **todas** las frases (de 2 s o más). Mientras lo confirma, la etiqueta de idioma muestra un "?" (por ejemplo **EN?**). Si la frase era español, se mueve sola a español y se vuelve a transcribir en español. La regla favorece al español: pasar a español es fácil; pasar de español a inglés solo ocurre si Whisper está muy seguro y el texto no era claramente español.
+
+**Correcciones por contexto:** en llamadas de seguros, "file a game", "game number" → *claim*; "accessor" → *assessor*. Para otras palabras que oiga mal, usa **Vocabulary → Fix**.
+
 ## Tarjetas editables
 
 Pasa el cursor sobre cualquier tarjeta: **Edit** para cambiar su texto (también las que vienen con la app) y **×** para borrarla (las tuyas) u ocultarla (las de la app). En ⚙ → *Restore built-in cards* vuelves a las originales.

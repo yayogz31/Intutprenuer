@@ -447,14 +447,15 @@
     else if (m.type === "asr" || m.type === "error") {
       const job = aiJobs.get(m.id); aiJobs.delete(m.id);
       if (!job) return;
-      job.row.classList.remove("refining");
+      job.row.classList.remove("refining", "langcheck");
       // si el texto del motor rápido es claramente de un idioma, Whisper no puede cambiarlo (evita que "traduzca" el español al inglés)
       const fastLang = job.part ? detectTextLang(job.part.text) : null;
       if (m.lang && m.lang !== job.lang && !job.unclear && job.row._lang === job.lang) {
         const w = (job.part && job.part.vwords) || [];
         const fastConf = w.length ? w.reduce((t, x) => t + (x.conf || 0), 0) / w.length : 0.5;
         // se respeta el idioma del motor rápido si su texto es claro y tenía buena confianza, salvo que Whisper esté MUY seguro
-        if (fastLang === job.lang && fastConf >= 0.8 && (m.margin || 0) < 4) { job.keepLang = true; }
+        // hacia español: se acepta (el worker ya exigió margen); hacia inglés: solo si el texto no era claramente español
+        if (m.lang === "en" && (fastLang === "es" || (fastLang === job.lang && fastConf >= 0.8 && (m.margin || 0) < 5))) { job.keepLang = true; }
         else { flipRowLang(job.row, true); job.lang = m.lang; job.forced = true; }
       }
       if (job.unclear) {
@@ -493,7 +494,7 @@
     if (missing > Math.max(1, Math.round(sure.length * 0.34))) return false;   // dejó fuera demasiadas palabras seguras
     if (!part.vwords && wn.length < wo.length * 0.7) return false;
     const dOld = digitsOf(part.text), dNew = digitsOf(newText);
-    if (dOld.length >= 2 && !dNew.includes(dOld)) return false;                // perdió o cambió números
+    if (dOld.length >= 1 && !dNew.includes(dOld)) return false;                // perdió o cambió números (aunque sea uno)
     return true;
   }
   function lev(a, b) {
@@ -597,8 +598,19 @@
 
   /** Procesa una frase final. lang = "es" | "en" (idioma en que se dijo). audio = Float32Array 16 kHz (opcional). */
   /** Arreglos comunes del motor rápido: "three d" → "3D", "two d" → "2D". */
+  // Confusiones típicas del motor rápido que se corrigen según el contexto de la llamada
+  const INS_CTX = /\b(insurance|policy|claim|accident|car|vehicle|adjuster|coverage|deductible|damage|tow|crash|agent|seguro|poliza|reclamo)\b/i;
+  function contextFixes(text, lang) {
+    if (lang !== "en") return text;
+    const ins = INS_CTX.test(text) || (session && leadDomain() === "seguros");
+    if (ins) {
+      text = text.replace(/\b(file|filed|filing|open|opened|submit|submitted|my|the|a|your|new|this|that|same|insurance)\s+games?\b/gi, (m, w) => `${w} claim`)
+                 .replace(/\bgames?\s+(number|status|adjuster|department|form|representative|process)\b/gi, (m, w) => `claim ${w}`);
+    }
+    return text.replace(/\baccessors?\b/gi, (m) => (m.endsWith("s") ? "assessors" : "assessor"));
+  }
   function tidy(text, lang) {
-    text = applyFixes(text);
+    text = contextFixes(applyFixes(text), lang);
     if (lang === "en") text = text.replace(/\b(two|three|four)[\s-]+d\b/gi, (m, w) => ({ two: "2", three: "3", four: "4" })[w.toLowerCase()] + "D");
     else text = text.replace(/\b(dos|tres)[\s-]+de\b(?=\s*(?:$|[.,]|impres|anima|modelo|película|pelicula))/gi, (m, w) => (w.toLowerCase() === "dos" ? "2D" : "3D"));
     return text;
@@ -687,7 +699,8 @@
         while (withAudio.length > 30) withAudio.shift()._audio = null;
       } else row._audio = null;
       // en modo Auto, Whisper confirma el idioma si la decisión fue dudosa (o siempre, en perfil Max)
-      const detect = !!opts.auto && row._parts.length === 1 && (opts.ambiguous || P().whisper === "all" || gpuFast);
+      const detect = !!opts.auto && row._parts.length === 1;   // modo Auto: Whisper confirma el idioma de todas las frases
+      if (detect) row.classList.add("langcheck");
       ai.postMessage({ type: "asr", id, lang, audio, conf: conf || 0, detect }, [audio.buffer]);
     }
 

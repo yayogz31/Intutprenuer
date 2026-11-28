@@ -132,7 +132,14 @@ async function run(job, retry) {
   // modo Auto: si el idioma es dudoso y la frase es suficientemente larga, Whisper confirma el idioma real
   if (job.detect && secs >= 2.5) {
     // solo cambia el idioma si Whisper está muy seguro
-    try { const d = await detectLang(asr, job.audio); job.lidMargin = d.margin; if (d.margin > 2.5 && d.lang !== job.lang) job.lang = d.lang; } catch { /* sigue con el idioma dado */ }
+    // pasar a español es fácil (margen > 1.5); pasar a inglés exige mucha seguridad (margen > 4)
+    let changed = false;
+    try {
+      const d = await detectLang(asr, job.audio); job.lidMargin = d.margin;
+      if (d.lang !== job.lang && d.margin > (d.lang === "es" ? 1.5 : 4)) { job.lang = d.lang; changed = true; }
+    } catch { /* sigue con el idioma dado */ }
+    // con trabajo pendiente y frase muy segura: solo se confirma el idioma (si no cambió, no se re-transcribe)
+    if (job.lidOnly && !changed) { self.postMessage({ type: "asr", id: job.id, text: "", lang: job.lang, margin: job.lidMargin || 0, skipped: true }); return; }
   }
   const out = await asr(job.audio, {
     task: "transcribe",
@@ -158,6 +165,7 @@ async function pump() {
     while (queue.length > 3) { const old = queue.shift(); self.postMessage({ type: "asr", id: old.id, text: "", skipped: true }); }
     const job = queue.shift();
     // con trabajo pendiente, las frases que el motor rápido ya entendió con mucha seguridad se saltan
+    if (queue.length && job.conf >= 0.93 && job.detect) job.lidOnly = true;
     if (queue.length && job.conf >= 0.93 && !job.detect) { self.postMessage({ type: "asr", id: job.id, text: "", skipped: true }); continue; }
     try { await run(job); }
     catch (e) {

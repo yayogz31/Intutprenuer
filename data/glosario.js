@@ -7,6 +7,7 @@
  */
 window.GLOSARIO_RAW = [
   // ───────── GENERAL / SERVICIOS / VIAJES ─────────
+  ["Advisor", "asesor, asesora, consejero", "g", "Person who gives guidance or advice."],
   ["Address", "domicilio, dirección", "g", "Place where a person lives or receives mail."],
   ["Amount", "monto, cantidad", "g", "A sum of money or a number of units."],
   ["Appliances", "electrodomésticos", "g", "Household machines: fridge, stove, washer, dryer."],
@@ -230,6 +231,7 @@ window.GLOSARIO_RAW = [
 
   // ───────── SEGUROS / AUTO / TRÁNSITO / VIVIENDA ─────────
   ["Adjuster", "liquidador de daños, perito de siniestros, ajustador", "s", "Insurance person who assesses damage and decides the claim payment."],
+  ["Assessor / insurance assessor", "tasador, perito evaluador, evaluador de daños", "s", "Person who evaluates damage or value for the insurer."],
   ["Appraiser", "tasador, evaluador, agente de avalúos, valuador", "s", "Person who estimates the value of property or damage."],
   ["Bodily injury", "lesión corporal, daños físicos, lesiones corporales", "s", "Injuries to people in an accident; liability coverage."],
   ["Body shop", "taller de carrocería, taller de hojalatería", "s", "Shop that repairs a car's body."],

@@ -170,6 +170,7 @@
     // numérica: 12/15/2026, 15-12-1985, 3/4
     const re = /\b(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2,4}))?\b/g; let m;
     while ((m = re.exec(n))) {
+      if (!m[3] && !m[0].includes("/")) continue;   // "1-7" o "3.5" sin año no son fechas
       let mo = +m[1], d = +m[2], y = m[3] ? +m[3] : null;
       if (y !== null && y < 100) y += y > 30 ? 1900 : 2000;
       let ambiguous = false;

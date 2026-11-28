@@ -290,3 +290,4 @@ button.fix:hover { color: var(--tx); border-color: var(--acc); }
 .card .card-acts button { background: var(--s1); border: 1px solid var(--line2); color: var(--tx2); border-radius: 4px; font-size: 11px; line-height: 17px; padding: 0 6px; cursor: pointer; }
 .card .card-acts button:hover { color: var(--tx); border-color: var(--acc); }
 .card .title { padding-right: 70px; }
+.trow.langcheck .meta .lang::after { content: "?"; color: var(--warn); margin-left: 1px; }
