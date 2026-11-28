@@ -595,7 +595,9 @@
     const dOld = digitsOf(part.text), dNew = digitsOf(newText);
     const subseq = (a, b) => { let i = 0; for (const c of b) if (c === a[i]) i++; return i === a.length; };
     if (dOld.length >= 1 && !subseq(dOld, dNew)) return false;                 // perdió o cambió un dígito
-    if (dOld.length >= 1 && dNew.length - dOld.length > Math.max(3, Math.ceil(dOld.length * 0.5))) return false;
+    // dígitos que el rápido sí escribió aunque en forma rara ("3.3.71") cuentan como oídos, no como agregados
+    const heard = Math.max(dOld.length, (part.text.match(/\d/g) || []).length);
+    if (dOld.length >= 1 && dNew.length - heard > Math.max(3, Math.ceil(heard * 0.5))) return false;
     return true;
   }
   function lev(a, b) {
@@ -639,6 +641,37 @@
     fillTranslation(row, row._text, row._lang);
     renderTerms();
     if (row === $("transcript").lastElementChild) renderSuggestions(suggestionsFor(a));
+  }
+
+  /** Corrección de una fila completa: la frase se pausó a la mitad y el núcleo transcribió todas sus partes
+   *  juntas (con el contexto completo, p. ej. un número dictado en partes). Reemplaza las partes de la fila. */
+  function applyRowRefinement(segs, text, lang) {
+    let row = null;
+    for (const sg of segs) { const j = aiJobs.get(sg); if (j && j.row && !row) row = j.row; aiJobs.delete(sg); }
+    if (!row) row = [...$("transcript").querySelectorAll(".trow")].find((r) => r._segs && segs.some((sg) => r._segs.includes(sg))) || null;
+    if (!row || !session || !row.isConnected || !row._parts) return;
+    row.classList.remove("refining", "langcheck");
+    if (!text || lang !== row._lang) return;
+    text = applyFixes(text);
+    if (words(text).join(" ") === words(row._text).join(" ")) return;
+    const vw = row._parts.flatMap((p) => p.vwords || []);
+    if (!safeRefinement({ text: row._text, vwords: vw.length ? vw : null }, text)) return;
+    const a = analyze(text);
+    const now = Date.now();
+    for (const e of a.terms) { const v = session.termsSeen.get(e) || { n: 0, t: 0 }; if (!row._parts.some((p) => p.terms && p.terms.has(e))) v.n++; v.t = now; session.termsSeen.set(e, v); }
+    const ids = new Set(row._parts.map((p) => p.id));
+    const part = { id: ++session.partSeq, text, vwords: null, terms: new Set(a.terms), ctx: row._parts[0].ctx, question: a.question };
+    const kr = extractKeys(a, +row.dataset.rid, part.ctx);
+    session.keys = session.keys.filter((k) => !(ids.has(k.part) && !k.confirmed));
+    storeKeys((kr.items || []).map((k) => ({ ...k, part: part.id })), +row.dataset.rid);
+    part.html = a.html;
+    row._parts = [part];
+    const orig = row.querySelector(".cell.orig");
+    withStableScroll(() => { renderRow(row); orig.classList.add("refined", "flash"); });
+    setTimeout(() => orig.classList.remove("flash"), 900);
+    orig.title = "Corrected by the high-accuracy engine";
+    fillTranslation(row, row._text, row._lang);
+    renderTerms(); renderKeys(); renderStrip();
   }
 
   // ───────────────── Scroll estable de la transcripción ─────────────────
@@ -790,6 +823,7 @@
       if (!pinned && !opts.replace) { unseenRows++; updateJump(); }
     }
     row._t = now;
+    if (opts.seg) row._segs = (row._segs || []).concat(opts.seg);
     if (opts.refined) { const o = row.querySelector(".cell.orig"); o.classList.add("refined", "flash"); setTimeout(() => o.classList.remove("flash"), 900); }
     clearInterim();
     fillTranslation(row, row._text, lang);   // se traduce la oración completa (no pedazos)
@@ -1078,6 +1112,7 @@
         if (session) { lastLang = ev.lang; handleFinal(ev.text, ev.lang, null, ev.conf, { seg: ev.seg, group: ev.group, words: ev.words, auto: cfg.lang === "auto" }); }
         break;
       case "refined":
+        if (ev.group_segs && ev.group_segs.length > 1) { applyRowRefinement(ev.group_segs, ev.skipped ? "" : ev.text, ev.lang); break; }
         onAiMessage({ data: { type: "asr", id: ev.seg, text: ev.skipped ? "" : ev.text, lang: ev.lang, margin: Math.abs(ev.margin || 0) } });
         break;
       case "engine":

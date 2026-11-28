@@ -19,7 +19,17 @@ function wer(ref, hyp) {
 const segs = new Map();
 for (const e of ev) {
   if (e.type === "final") segs.set(e.seg, { fast: e.text, words: e.words, lang: e.lang, group: e.group, lat: e.lat_ms, ref: null });
-  if (e.type === "refined" && segs.has(e.seg) && !e.skipped && e.text) Object.assign(segs.get(e.seg), { refined: e.text, rlang: e.lang, rlat: e.lat_ms, rms: e.ms });
+  if (e.type === "refined" && segs.has(e.seg) && !e.skipped && e.text) {
+    if (e.group_segs && e.group_segs.length > 1) {
+      // corrección de la fila completa: igual que la interfaz, reemplaza todas sus partes
+      const parts = e.group_segs.map((g) => segs.get(g)).filter(Boolean);
+      const whole = { text: parts.map((p) => p.fast).join(" "), words: parts.flatMap((p) => p.words || []) };
+      const first = parts[0];
+      first.rowfix = { text: e.text, whole };
+      for (const p of parts.slice(1)) p.covered = first;
+      Object.assign(segs.get(e.seg), { rlat: e.lat_ms });
+    } else Object.assign(segs.get(e.seg), { refined: e.text, rlang: e.lang, rlat: e.lat_ms, rms: e.ms });
+  }
 }
 // misma regla que la interfaz (app.js → safeRefinement): la corrección solo se acepta si conserva
 // todos los dígitos y casi todas las palabras seguras; si no, queda el texto del modelo rápido.
@@ -37,13 +47,19 @@ function safe(part, newText) {
   const dOld = digits(part.text), dNew = digits(newText);
   const subseq = (a, b) => { let i = 0; for (const c of b) if (c === a[i]) i++; return i === a.length; };
   if (dOld.length >= 1 && !subseq(dOld, dNew)) return false;
-  if (dOld.length >= 1 && dNew.length - dOld.length > Math.max(3, Math.ceil(dOld.length * 0.5))) return false;
+  const heard = Math.max(dOld.length, (part.text.match(/\d/g) || []).length);
+  if (dOld.length >= 1 && dNew.length - heard > Math.max(3, Math.ceil(heard * 0.5))) return false;
   return true;
 }
 for (const s of segs.values()) s.ui = s.refined && safe({ text: s.fast, vwords: s.words }, s.refined) ? s.refined : s.fast;
+for (const s of segs.values()) if (s.rowfix) {
+  const parts = [...segs.values()].filter((x) => x === s || x.covered === s);
+  const shown = parts.map((x) => x.ui).join(" ");
+  if (safe({ text: shown, vwords: s.rowfix.whole.words }, s.rowfix.text)) { s.ui = s.rowfix.text; s.refined = s.rowfix.text; for (const x of parts) if (x !== s) { x.ui = ""; x.refined = ""; } }
+}
 const S = [...segs.values()];
 const ref = sc.parts.map((p) => p.ref).join(" ");
-const fast = S.map((s) => s.fast).join(" "), raw = S.map((s) => s.refined || s.fast).join(" "), best = S.map((s) => s.ui).join(" ");
+const fast = S.map((s) => s.fast).join(" "), raw = S.map((s) => (s.refined === "" ? "" : s.refined || s.fast)).filter(Boolean).join(" "), best = S.map((s) => s.ui).filter(Boolean).join(" ");
 const wf = wer(ref, fast), wb = wer(ref, best), wr = wer(ref, raw);
 const dRef = sc.digits || digits(ref), dFast = digits(fast), dBest = digits(best);
 const langs = S.map((s) => (s.rlang || s.lang)).join(",");

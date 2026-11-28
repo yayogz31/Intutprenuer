@@ -42,7 +42,7 @@ pub enum Event {
     State { state: &'static str },
     Partial { seg: u64, lang: &'static str, text: String },
     Final { seg: u64, group: u64, lang: &'static str, text: String, conf: f32, words: Vec<Word>, margin: f32, lat_ms: u64 },
-    Refined { seg: u64, lang: &'static str, text: String, margin: f32, ms: u64, lat_ms: u64, model: String, forced: bool, skipped: bool },
+    Refined { seg: u64, lang: &'static str, text: String, margin: f32, ms: u64, lat_ms: u64, model: String, forced: bool, skipped: bool, group_segs: Vec<u64> },
     Engine { fast: String, accurate: String, gpu: Option<String>, vram_mb: Option<u64> },
     Progress { label: String, pct: u32, done_mb: u64, total_mb: u64 },
     Notice { level: &'static str, code: String, message: String },
@@ -79,6 +79,7 @@ struct Pipeline {
     group: u64,
     group_parts: u32,
     group_len: usize,
+    group_segs: Vec<u64>,
     last_end: u64,
     last_question: bool,
     last_text: String,
@@ -111,6 +112,7 @@ impl Pipeline {
             group: 0,
             group_parts: 0,
             group_len: 0,
+            group_segs: Vec::new(),
             last_end: 0,
             last_question: false,
             last_text: String::new(),
@@ -148,6 +150,8 @@ struct AccJob {
     forced: bool,
     prompt: String,
     ended_at: Option<Instant>,
+    /// Si no está vacío: el audio es la fila completa (estas frases unidas) y el texto reemplaza la fila.
+    group_segs: Vec<u64>,
 }
 
 #[derive(Default)]
@@ -425,7 +429,7 @@ impl Engine {
         let mut q = self.sh.accq.lock().unwrap();
         q.want_loaded = false;
         for j in q.jobs.drain(..) {
-            (self.sh.emit)(Event::Refined { seg: j.seg, lang: lang_str(j.en), text: String::new(), margin: 0.0, ms: 0, lat_ms: 0, model: String::new(), forced: j.forced, skipped: true });
+            (self.sh.emit)(Event::Refined { seg: j.seg, lang: lang_str(j.en), text: String::new(), margin: 0.0, ms: 0, lat_ms: 0, model: String::new(), forced: j.forced, skipped: true, group_segs: Vec::new() });
         }
         drop(q);
         self.sh.abort.store(true, Ordering::Relaxed);
@@ -447,7 +451,7 @@ impl Engine {
             text::build_prompt(lang_str(en), &p.hints, &r)
         };
         let mut q = self.sh.accq.lock().unwrap();
-        q.jobs.push_front(AccJob { seg, audio, en, margin: 0.0, forced: true, prompt, ended_at: None });
+        q.jobs.push_front(AccJob { seg, audio, en, margin: 0.0, forced: true, prompt, ended_at: None, group_segs: Vec::new() });
         drop(q);
         self.sh.acc_cv.notify_all();
         true
@@ -575,8 +579,8 @@ fn continues(prev: &str) -> bool {
     if t.is_empty() || t.ends_with('?') || t.ends_with('!') {
         return false;
     }
-    if !t.ends_with('.') && !t.ends_with('…') {
-        return true;
+    if !t.ends_with('.') || t.ends_with("...") || t.ends_with('…') {
+        return true; // sin punto final, o con puntos suspensivos: la frase quedó incompleta
     }
     let body = t.trim_end_matches(['.', '…']);
     let last = body.rsplit(|c: char| c.is_whitespace()).next().unwrap_or("").to_lowercase();
@@ -835,10 +839,12 @@ fn run_fast_final(sh: &Arc<Shared>, m: &mut Model, job: FastJob, gen: u64) {
             if join {
                 p.group_parts += 1;
                 p.group_len += job.audio.len();
+                p.group_segs.push(job.seg);
             } else {
                 p.group = job.seg;
                 p.group_parts = 1;
                 p.group_len = job.audio.len();
+                p.group_segs = vec![job.seg];
             }
             p.last_text = text.clone();
             p.last_lang_en = Some(en);
@@ -855,23 +861,51 @@ fn run_fast_final(sh: &Arc<Shared>, m: &mut Model, job: FastJob, gen: u64) {
     if text.is_empty() && tr.no_speech > 0.8 {
         return;
     }
-    let prompt = {
-        let p = sh.pipe.lock().unwrap();
-        // el contexto son las frases anteriores (no la actual)
-        let r: Vec<(String, String)> = p.recent.iter().take(p.recent.len().saturating_sub(if text.is_empty() { 0 } else { 1 })).cloned().collect();
-        text::build_prompt(lang_str(en), &p.hints, &r)
-    };
     if text.is_empty() {
         return; // nada que corregir en pantalla
     }
+    // Frase que continúa la anterior (pausa a la mitad): el modelo preciso transcribe la fila completa,
+    // con todo su audio junto, para no perder el contexto (p. ej. un número dictado en partes).
+    let (prompt, audio, group_segs) = {
+        let p = sh.pipe.lock().unwrap();
+        let segs = if p.group_segs.len() > 1 && p.group_segs.last() == Some(&job.seg) { p.group_segs.clone() } else { Vec::new() };
+        let mut audio = job.audio.clone();
+        if !segs.is_empty() {
+            let mut all: Vec<f32> = Vec::new();
+            let mut ok = true;
+            for s in &segs {
+                match p.history.iter().find(|(x, _)| x == s) {
+                    Some((_, a)) => {
+                        if !all.is_empty() {
+                            all.extend(std::iter::repeat(0.0).take(SR * 3 / 10)); // pausa corta entre partes
+                        }
+                        all.extend_from_slice(a);
+                    }
+                    None => ok = false,
+                }
+            }
+            if ok && all.len() <= SR * 28 {
+                audio = Arc::new(all);
+            }
+        }
+        let segs = if Arc::ptr_eq(&audio, &job.audio) { Vec::new() } else { segs };
+        // el contexto son las frases anteriores a esta fila
+        let skip = segs.len().max(1);
+        let r: Vec<(String, String)> = p.recent.iter().take(p.recent.len().saturating_sub(skip)).cloned().collect();
+        (text::build_prompt(lang_str(en), &p.hints, &r), audio, segs)
+    };
     let mut q = sh.accq.lock().unwrap();
+    if !group_segs.is_empty() {
+        // las partes anteriores de la fila quedan cubiertas por este trabajo
+        q.jobs.retain(|j| !group_segs.contains(&j.seg) || j.forced);
+    }
     // si se acumula trabajo, las frases más viejas se saltan (queda el texto del modelo rápido)
     while q.jobs.len() > 3 && !no_skip() {
-        if let Some(old) = q.jobs.pop_back() {
-            (sh.emit)(Event::Refined { seg: old.seg, lang: lang_str(old.en), text: String::new(), margin: 0.0, ms: 0, lat_ms: 0, model: String::new(), forced: false, skipped: true });
+        if let Some(old) = q.jobs.pop_front() {
+            (sh.emit)(Event::Refined { seg: old.seg, lang: lang_str(old.en), text: String::new(), margin: 0.0, ms: 0, lat_ms: 0, model: String::new(), forced: false, skipped: true, group_segs: Vec::new() });
         }
     }
-    q.jobs.push_back(AccJob { seg: job.seg, audio: job.audio, en, margin, forced: false, prompt, ended_at });
+    q.jobs.push_back(AccJob { seg: job.seg, audio, en, margin, forced: false, prompt, ended_at, group_segs });
     drop(q);
     sh.acc_cv.notify_all();
 }
@@ -917,7 +951,7 @@ fn acc_worker(sh: Arc<Shared>) {
                     }
                 } else if let Some(j) = q.jobs.pop_front() {
                     // sin modelo preciso: se responde "sin corrección"
-                    (sh.emit)(Event::Refined { seg: j.seg, lang: lang_str(j.en), text: String::new(), margin: 0.0, ms: 0, lat_ms: 0, model: String::new(), forced: j.forced, skipped: true });
+                    (sh.emit)(Event::Refined { seg: j.seg, lang: lang_str(j.en), text: String::new(), margin: 0.0, ms: 0, lat_ms: 0, model: String::new(), forced: j.forced, skipped: true, group_segs: Vec::new() });
                     continue;
                 }
                 q = sh.acc_cv.wait_timeout(q, Duration::from_millis(500)).unwrap().0;
@@ -933,7 +967,7 @@ fn acc_worker(sh: Arc<Shared>) {
                     let mut q = sh.accq.lock().unwrap();
                     q.want_loaded = false;
                     for j in q.jobs.drain(..) {
-                        (sh.emit)(Event::Refined { seg: j.seg, lang: lang_str(j.en), text: String::new(), margin: 0.0, ms: 0, lat_ms: 0, model: String::new(), forced: j.forced, skipped: true });
+                        (sh.emit)(Event::Refined { seg: j.seg, lang: lang_str(j.en), text: String::new(), margin: 0.0, ms: 0, lat_ms: 0, model: String::new(), forced: j.forced, skipped: true, group_segs: Vec::new() });
                     }
                 }
             }
@@ -954,7 +988,7 @@ fn acc_worker(sh: Arc<Shared>) {
                                 model = None;
                                 sh.notice("warn", "GPU_FAILED", "The graphics card stopped responding. Switched to the processor (a bit slower).");
                             }
-                            (sh.emit)(Event::Refined { seg: j.seg, lang: lang_str(j.en), text: String::new(), margin: 0.0, ms: 0, lat_ms: 0, model: String::new(), forced: j.forced, skipped: true });
+                            (sh.emit)(Event::Refined { seg: j.seg, lang: lang_str(j.en), text: String::new(), margin: 0.0, ms: 0, lat_ms: 0, model: String::new(), forced: j.forced, skipped: true, group_segs: Vec::new() });
                         }
                     }
                 }
@@ -1057,5 +1091,19 @@ fn run_accurate(sh: &Arc<Shared>, m: &mut Model, j: &AccJob) -> Result<Event, St
     let ms = t.elapsed().as_millis() as u64;
     let lat = j.ended_at.map(|x| x.elapsed().as_millis() as u64).unwrap_or(0);
     sh.log(format!("seg {} refined: {:.1}s audio, {} ms ({}), lang {}", j.seg, secs, ms, m.name, lang_str(en)));
-    Ok(Event::Refined { seg: j.seg, lang: lang_str(en), text, margin, ms, lat_ms: lat, model: m.name.clone(), forced: j.forced, skipped: false })
+    Ok(Event::Refined { seg: j.seg, lang: lang_str(en), text, margin, ms, lat_ms: lat, model: m.name.clone(), forced: j.forced, skipped: false, group_segs: j.group_segs.clone() })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn frases_incompletas() {
+        assert!(continues("The case number is 2024,"));
+        assert!(continues("The case number is 2 0 2 4."));
+        assert!(continues("Mi número de seguros sociales..."));
+        assert!(continues("Mi número de seguro social es."));
+        assert!(!continues("Can you ask the patient?"));
+        assert!(!continues("I had an accident yesterday."));
+    }
 }
