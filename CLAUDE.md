@@ -22,7 +22,7 @@ Si una tarea parece pedir romper alguna de estas reglas, detente y pregunta.
    - Los modelos se descargan **una sola vez** en el primer uso, con barra de progreso, y quedan en `%LOCALAPPDATA%\Inturpreneur\models`.
    - Nunca se meten los modelos dentro del ejecutable.
 5. **La app reemplaza a la página.** La app no carga nada de internet para funcionar: la interfaz va empaquetada dentro.
-   - La única conexión permitida es la descarga única de los modelos y la búsqueda de actualizaciones, y esta última solo cuando el usuario pulse "Check for updates".
+   - La única conexión permitida es la descarga única de los modelos y la búsqueda de actualizaciones, que se revisa al abrir la app o con "Check for updates" y siempre la instala el usuario.
    - Ninguna de las dos envía datos del usuario.
    - Cuando la app funcione bien, se retira la página de GitHub Pages, por decisión del usuario.
 6. **Verificar antes de entregar.** Nada se entrega sin probarlo primero (ver §6). Reporta los resultados con honestidad, incluido lo que falló o no se pudo probar.
