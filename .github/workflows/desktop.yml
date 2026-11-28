@@ -60,7 +60,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "desktop -> C:\\t"
+          workspaces: desktop
+          cache-targets: false
+          cache-directories: C:\t
           cache-on-failure: true
 
       - name: Vulkan SDK (para compilar whisper.cpp con GPU)
@@ -108,6 +110,8 @@ jobs:
           "Ejecutable: {0:N1} MB" -f ($exe.Length / 1MB)
           "Instalador: {0:N1} MB  ({1})" -f ($setup.Length / 1MB), $setup.Name
           "SETUP=$($setup.FullName)" | Out-File -Append $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item $setup.FullName dist/
 
       - name: Prueba de humo con el instalador real (CPU; el runner no tiene GPU)
         shell: pwsh
@@ -140,7 +144,7 @@ jobs:
           Get-ChildItem "$dir\models" -Recurse | Format-Table FullName, Length
           # 3) desinstalar y revisar que no quede nada
           Start-Process -FilePath "$dir\uninstall.exe" -ArgumentList "/S" -Wait
-          Start-Sleep -Seconds 5
+          Start-Sleep -Seconds 20
           if (Test-Path $dir) { Get-ChildItem $dir -Recurse -Force; throw "Quedaron archivos en $dir tras desinstalar" }
           $after = Snap
           $leftovers = @()
@@ -156,7 +160,7 @@ jobs:
         with:
           name: Inturpreneur-instalador-windows
           path: |
-            C:/t/release/bundle/nsis/*.exe
+            dist/*.exe
             smoke.json
           retention-days: 14
 

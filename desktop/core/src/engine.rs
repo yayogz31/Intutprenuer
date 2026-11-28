@@ -835,6 +835,11 @@ fn run_fast_final(sh: &Arc<Shared>, m: &mut Model, job: FastJob, gen: u64) {
     }
     let mut conf = tr.conf;
     let mut words = tr.words;
+    // si la limpieza cortó una repetición, la lista de palabras se corta igual
+    let n_words = text.split_whitespace().count();
+    if words.len() > n_words {
+        words.truncate(n_words);
+    }
     if text.is_empty() {
         // el final salió vacío pero mientras se hablaba sí hubo texto: se conserva ese texto
         let lp = sh.pipe.lock().unwrap().last_partial.take();
