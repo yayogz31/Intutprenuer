@@ -120,6 +120,10 @@ Claves de `localStorage`: `inturp.cfg`, `inturp.fixes`, `inturp.myterms`, `intur
 
 ### Cero basura en el disco (el usuario lo pidió)
 
+- **Todo en una sola carpeta visible: `%LOCALAPPDATA%\Inturpreneur`.**
+  - Ahí van la app, los modelos, la configuración y el perfil de WebView2 (`EBWebView`), dentro de esa misma carpeta.
+  - Nada en `%APPDATA%` (Roaming), `ProgramData`, Documentos ni carpetas ocultas aparte.
+  - Del sistema, solo la entrada de desinstalación de Windows y el acceso directo, que es lo normal.
 - Lo único que queda en la laptop:
   1. La app instalada (~20–30 MB).
   2. Los modelos en `%LOCALAPPDATA%\Inturpreneur\models`.
