@@ -89,6 +89,10 @@ Claves de `localStorage`: `inturp.cfg`, `inturp.fixes`, `inturp.myterms`, `intur
 
 ### Arquitectura
 
+- **La app va en su propia carpeta `desktop/`, dentro de este mismo repositorio.**
+  - La interfaz de la app es una **copia** de los archivos de la página, dentro de `desktop/ui/`, que se adapta ahí.
+  - **No modificar la página publicada** (los archivos de la raíz, `data/`, `vendor/` y `models/`) mientras se hace la app, salvo que el usuario lo pida. Así la página sigue funcionando igual hasta que se retire.
+
 - **Interfaz.** El código de la página (HTML, JS y CSS), **empaquetado dentro de la app** y mostrado en una ventana nativa (WebView2, que ya viene en Windows 11).
   - No se carga nada desde GitHub Pages ni desde otro sitio.
   - Sin service worker ni COOP/COEP: Tauri sirve los archivos localmente.
