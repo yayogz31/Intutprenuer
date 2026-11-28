@@ -116,6 +116,14 @@ Windows 11, GTX 1650 Ti (4 GB VRAM), i5 y 32 GB de RAM.
 - Mantener el uso de VRAM por debajo de unos 2.5 GB.
 - Procesar por frases con VAD; nunca correr el modelo en bucle sobre silencio.
 - Modo de bajo consumo cuando no hay voz.
+- **La GPU es del usuario fuera de las llamadas.** Practica con Blender y Unity en sus descansos.
+  - La GPU solo trabaja mientras alguien habla durante una llamada activa; en silencio, ~0%.
+  - Con **End**, o tras unos minutos en **Pause**, el modelo se descarga de la VRAM y la memoria queda libre por completo.
+    - Al dar Start de nuevo se vuelve a cargar desde el disco, en unos segundos y sin internet.
+  - Botón o menú **"Free GPU now"** para liberarla al instante.
+  - Opción **"Light mode"**: modelo más pequeño o CPU, para usar la app mientras Blender o Unity está abierto.
+  - Nada de procesos en segundo plano que usen la GPU cuando la app no está en llamada.
+  - Prioridad de proceso normal o baja; nunca acaparar el equipo.
 
 ### Sesiones planeadas (meta: 2 o 3)
 
