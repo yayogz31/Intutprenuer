@@ -40,12 +40,18 @@
     n.textContent = msg; n.className = "notice" + (isErr ? " err" : ""); n.hidden = false;
   }
   async function copy(text) {
-    try { await navigator.clipboard.writeText(text); }
+    let ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; }
     catch {
-      const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta);
-      ta.select(); document.execCommand("copy"); ta.remove();
+      // dentro de una ventana abierta (diálogo) el resto de la página está bloqueada: el texto se pone en la ventana
+      const host = document.querySelector("dialog[open]") || document.body;
+      const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      host.appendChild(ta); ta.select();
+      try { ok = document.execCommand("copy"); } catch { ok = false; }
+      ta.remove();
     }
-    toast("Copied");
+    toast(ok ? "Copied" : "Could not copy automatically — select the text and press Ctrl+C");
+    return ok;
   }
 
   // ───────────────── Configuración (solo preferencias, nunca texto de llamadas) ─────────────────
@@ -1679,6 +1685,8 @@
     $("btnCopyDiag").onclick = () => {
       const info = [`Inturpreneur diagnostics`, `Browser: ${navigator.userAgent}`, `CPU cores: ${navigator.hardwareConcurrency || "?"} · RAM: ${navigator.deviceMemory || "?"} GB · Profile: ${PERF[perfKey()].label}`,
         `Cross-origin isolated: ${self.crossOriginIsolated}`, $("engineInfo").textContent].join("\n");
+      const box = $("diagText"); box.hidden = false; box.value = info;
+      box.focus(); box.select();
       copy(info);
     };
     $("cfgSmall").checked = cfg.whisperSmall !== false;

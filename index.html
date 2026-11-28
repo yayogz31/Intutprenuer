@@ -177,6 +177,7 @@
       <p class="hint">The fast engine shows text instantly; Whisper re-checks sentences a moment later and corrects them (marked ✓). First use downloads ~100 MB, then it stays saved in the browser.</p>
       <p id="engineInfo" class="hint">High-accuracy engine: starts when you press Start.</p>
       <div class="row"><button id="btnCopyDiag" type="button" class="btn ghost tiny">Copy diagnostics</button></div>
+      <textarea id="diagText" class="diag-text" rows="6" readonly hidden></textarea>
       <label class="row"><input id="cfgSmall" type="checkbox"> Use the larger, more accurate model on GPU (Whisper small, ~330 MB one-time)</label>
       <p class="hint">Only used if your graphics card is fast enough; otherwise the standard model is used automatically.</p>
       <label class="row"><input id="cfgTranslate" type="checkbox"> Live translation (EN ⇄ ES)</label>

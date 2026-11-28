@@ -298,3 +298,5 @@ button.fix:hover { color: var(--tx); border-color: var(--acc); }
 .engine-chip.best { color: var(--ok); border-color: rgba(63,185,80,.5); }
 .engine-chip.loading { color: var(--acc); border-color: rgba(110,168,254,.5); }
 .engine-chip.bad { color: var(--bad); border-color: rgba(229,83,75,.5); }
+.diag-text { width: 100%; font: 12px/1.45 ui-monospace, Consolas, monospace; color: var(--tx2); }
+.diag-text[hidden] { display: none; }
