@@ -291,3 +291,10 @@ button.fix:hover { color: var(--tx); border-color: var(--acc); }
 .card .card-acts button:hover { color: var(--tx); border-color: var(--acc); }
 .card .title { padding-right: 70px; }
 .trow.langcheck .meta .lang::after { content: "?"; color: var(--warn); margin-left: 1px; }
+
+/* indicador del motor de precisión */
+.engine-chip { font-size: 10.5px; font-weight: 600; letter-spacing: .02em; text-transform: none; color: var(--mut); border: 1px solid var(--line2); border-radius: 99px; padding: 0 8px; line-height: 17px; cursor: help; }
+.engine-chip[hidden] { display: none; }
+.engine-chip.best { color: var(--ok); border-color: rgba(63,185,80,.5); }
+.engine-chip.loading { color: var(--acc); border-color: rgba(110,168,254,.5); }
+.engine-chip.bad { color: var(--bad); border-color: rgba(229,83,75,.5); }

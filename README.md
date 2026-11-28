@@ -31,6 +31,14 @@ Botones **Iniciar**, **Pausar/Reanudar** y **Terminar**. Atajos: `Alt+S`, `Alt+P
 
 Si hay tarjeta de video compatible, Whisper la usa; si es débil, usa el procesador.
 
+## ¿Qué motor de precisión estoy usando?
+
+Junto a *Live transcript* aparece un indicador fijo: **Whisper small · GPU** (el más preciso), **Whisper base · GPU**, **Whisper base · CPU** o el avance de la descarga. En ⚙ → *High-accuracy transcript* se explica qué GPU se detectó, qué se probó y **por qué** no se usó el modelo más preciso (por ejemplo, "no WebGPU adapter" o "too slow"). Whisper small ahora también funciona en GPUs sin fp16 (con una versión comprimida q4).
+
+## Acrónimos
+
+**Vocabulary → Acronyms:** agrega acrónimos (DMV, STD, PCP…) con su forma completa, cómo quieres verlos en español y su significado. Se reconocen aunque el motor los escriba letra por letra ("d m v"), se resaltan con su significado y aparecen a tu manera en la traducción (p. ej. *PCP → médico de cabecera (PCP)*). Los acrónimos del glosario (DMV, STD, ICU, APR…) también se reconocen deletreados.
+
 ## El español se muestra como español
 
 En modo Auto, Whisper confirma el idioma de **todas** las frases (de 2 s o más). Mientras lo confirma, la etiqueta de idioma muestra un "?" (por ejemplo **EN?**). Si la frase era español, se mueve sola a español y se vuelve a transcribir en español. La regla favorece al español: pasar a español es fácil; pasar de español a inglés solo ocurre si Whisper está muy seguro y el texto no era claramente español.

@@ -96,7 +96,7 @@
   function loadGlossary() {
     const extra = store.get("inturp.gloss", null);
     const base = (window.GLOSARIO_BASE || []).map((e) => ({ ...e, dom: normDom(e.dom) }));
-    const mine = myTerms.map((m) => ({ t: m.en, tr: m.es, d: m.note || "Your preferred translation", dom: normDom(m.dom), mine: true }));
+    const mine = myTerms.map((m) => ({ t: m.en, tr: m.es, d: m.note || (m.acronym ? "Your acronym" : "Your preferred translation"), dom: normDom(m.dom), mine: true }));
     glossary = mine.concat(extra ? (extra.replace ? extra.items : base.concat(extra.items)) : base);
     buildIndex();
     mtCache.clear();
@@ -112,8 +112,9 @@
     if (!myTerms.length || !out) return out;
     const n = strip(src);
     for (const m of myTerms) {
-      const srcTerm = from === "en" ? m.en : m.es.split(/[,/]/)[0].trim();
-      const want = from === "en" ? m.es.split(/[,/]/)[0].trim() : m.en;
+      const enV = String(m.en).split(" / ").map((x) => x.trim()).filter(Boolean);
+      const srcTerm = from === "en" ? (enV.find((v) => new RegExp(`(?<![\\p{L}])${reEsc(strip(v))}(?![\\p{L}])`, "u").test(n)) || enV[0]) : m.es.split(/[,/]/)[0].trim();
+      const want = from === "en" ? m.es.split(/[,/]/)[0].trim() : enV[0];
       if (!srcTerm || !want || !new RegExp(`(?<![\\p{L}])${reEsc(strip(srcTerm))}(?![\\p{L}])`, "u").test(n)) continue;
       if (strip(out).includes(strip(want))) continue;
       const mt = await mtRendering(srcTerm, from);
@@ -121,6 +122,9 @@
         const re = new RegExp(`(?<![\\p{L}])${reEsc(mt)}(?![\\p{L}])`, "iu");
         if (re.test(out)) { out = out.replace(re, want); continue; }
       }
+      // los traductores suelen dejar acrónimos y nombres sin traducir: si el término aparece tal cual, se cambia
+      const same = new RegExp(`(?<![\\p{L}])${reEsc(srcTerm).replace(/\s+/g, "[\\s.]*")}(?![\\p{L}])`, "iu");
+      if (same.test(out)) out = out.replace(same, want);
     }
     return out;
   }
@@ -136,6 +140,8 @@
       if (v.includes(".")) { const d = v.replace(/\./g, "").replace(/\s+/g, " ").trim(); if (d.length >= 2) out.push(d); }
     };
     for (const part of String(text).split(/[,;/]/)) {
+      const ac = part.trim().replace(/[()]/g, "");
+      if (/^[A-Z]{2,6}$/.test(ac)) { const l = ac.toLowerCase().split(""); out.push(l.join(" "), l.join(".") + ".", l.join(". ") + "."); }
       const inner = [...part.matchAll(/\(([^)]*)\)/g)].map((m) => m[1]);
       add(part.replace(/\([^)]*\)/g, " "));
       for (const i of inner) if (i.trim().split(/\s+/).length >= 2 || /^[a-z]{4,}$/i.test(i.trim())) add(i);
@@ -427,7 +433,16 @@
 
   // ───────────────── Transcripción precisa (Whisper local, en un worker) ─────────────────
   // Vosk muestra el texto al instante; Whisper vuelve a transcribir cada frase cerrada y la corrige.
-  let ai = null, aiReady = false, aiFailed = false, aiSeq = 0, aiMode = "";
+  let ai = null, aiReady = false, aiFailed = false, aiSeq = 0, aiMode = "", aiDiag = null;
+  /** Indicador fijo del motor de precisión (qué modelo y dónde corre) + detalle en Ajustes. */
+  function setEngineChip(text, kind) { const c = $("engineChip"); c.textContent = text; c.className = "engine-chip " + (kind || ""); c.hidden = !text; }
+  function renderEngineInfo() {
+    const d = aiDiag;
+    if (!d) return;
+    if (d.final) setEngineChip(d.final, /small/.test(d.final) ? "best" : /failed/.test(d.final) ? "bad" : "");
+    const tried = (d.tried || []).map((t) => `${t.model}${t.enc ? " (" + t.enc + ")" : ""}: ${t.ok ? "OK, " + t.ms + " ms" : "not used — " + t.err}`).join(" · ");
+    $("engineInfo").textContent = `In use: ${d.final || "loading…"}. GPU: ${d.gpu}.${tried ? " Tried: " + tried + "." : ""}`;
+  }
   const aiJobs = new Map();
   function getAi() {
     if (!cfg.precise || aiFailed || P().whisper === "off" || typeof Worker === "undefined") return null;
@@ -441,7 +456,8 @@
   }
   function onAiMessage(e) {
     const m = e.data || {};
-    if (m.type === "progress") { if (m.pct < 100) notice(`Downloading the high-accuracy model (one time only, ~${m.mb} MB)… ${m.pct}%`); }
+    if (m.type === "progress") { if (m.pct < 100) { notice(`Downloading the high-accuracy model (one time only, ~${m.mb} MB)… ${m.pct}%`); setEngineChip(`Accuracy engine: loading ${m.pct}%`, "loading"); } }
+    else if (m.type === "diag") { aiDiag = m.diag; renderEngineInfo(); }
     else if (m.type === "ready") { aiReady = true; aiMode = m.mode || ""; notice(""); toast(`High-accuracy mode ready${m.mode === "gpu-small" ? " · Whisper small on GPU" : /gpu/.test(m.mode) ? " · using GPU" : ""}`, 3000); }
     else if (m.type === "error" && !m.id) { aiFailed = true; notice("High-accuracy mode is not available in this browser; using the fast transcript only."); setTimeout(() => notice(""), 6000); }
     else if (m.type === "asr" || m.type === "error") {
@@ -1412,14 +1428,29 @@
     };
     // tarjetas propias
     const renderMyTerms = () => {
-      $("myTermsList").innerHTML = myTerms.length ? myTerms.map((m, i) => `<div class="myterm"><span><b>${esc(m.en)}</b> → ${esc(m.es)}</span><button type="button" data-i="${i}" title="Delete">×</button></div>`).join("") : `<p class="hint">No terms yet.</p>`;
+      const row = (m, i) => `<div class="myterm"><span><b>${esc(String(m.en).split(" / ")[0])}</b>${m.acronym ? ` <small>(${esc(String(m.en).split(" / ").slice(1).join(" / "))})</small>` : ""} → ${esc(m.es)}</span><button type="button" data-i="${i}" title="Delete">×</button></div>`;
+      $("myTermsList").innerHTML = myTerms.some((m) => !m.acronym) ? myTerms.map((m, i) => (m.acronym ? "" : row(m, i))).join("") : `<p class="hint">No terms yet.</p>`;
+      $("acroList").innerHTML = myTerms.some((m) => m.acronym) ? myTerms.map((m, i) => (m.acronym ? row(m, i) : "")).join("") : `<p class="hint">No acronyms yet.</p>`;
     };
     const renderFixes = () => {
       $("fixList").innerHTML = fixes.length ? fixes.map((f, i) => `<div class="myterm"><span>${esc(f.heard)} → <b>${esc(f.correct)}</b></span><button type="button" data-i="${i}" title="Delete">×</button></div>`).join("") : `<p class="hint">No corrections yet.</p>`;
     };
     const showVocabTab = (t) => {
       for (const b of $("vocabTabs").children) b.classList.toggle("on", b.dataset.vt === t);
-      $("vtFix").hidden = t !== "fix"; $("vtTr").hidden = t !== "tr";
+      $("vtFix").hidden = t !== "fix"; $("vtTr").hidden = t !== "tr"; $("vtAcro").hidden = t !== "acro";
+    };
+    $("btnSaveAcro").onclick = () => {
+      const ac = $("acroAc").value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""), full = $("acroFull").value.trim(), es = $("acroEs").value.trim();
+      if (!ac || !es) { $("acroInfo").textContent = "Write the acronym and how it should appear in Spanish."; return; }
+      const en = full ? `${ac} / ${full}` : ac;
+      myTerms = myTerms.filter((m) => strip(String(m.en).split(" / ")[0]) !== strip(ac)).concat([{ en, es, note: $("acroMeaning").value.trim() || full, dom: $("acroDom").value, acronym: true }]);
+      store.set("inturp.myterms", myTerms); loadGlossary(); renderMyTerms();
+      $("acroAc").value = ""; $("acroFull").value = ""; $("acroEs").value = ""; $("acroMeaning").value = "";
+      $("acroInfo").textContent = `Saved: ${ac}${full ? " (" + full + ")" : ""} → ${es}`;
+    };
+    $("acroList").onclick = (e) => {
+      const b = e.target.closest("button[data-i]"); if (!b) return;
+      myTerms.splice(+b.dataset.i, 1); store.set("inturp.myterms", myTerms); loadGlossary(); renderMyTerms();
     };
     const openVocab = (tab, heard) => {
       $("termForm").reset(); $("termInfo").textContent = ""; $("fixInfo").textContent = "";

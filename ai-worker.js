@@ -43,29 +43,44 @@ self.fetch = async (input, init) => {
 };
 const exists = async (path) => { try { const r = await nativeFetch(env.localModelPath + path, { method: "HEAD" }); return r.ok; } catch { return false; } };
 
+// Diagnóstico: qué se probó y por qué (se muestra en Ajustes para poder ajustar el equipo)
+const diag = { gpu: "not checked", tried: [] };
+const post = (extra) => self.postMessage({ type: "diag", diag: { ...diag, ...extra } });
+
 /** GPU real disponible (no adaptadores "de software") y si soporta fp16. */
 async function gpuInfo() {
   try {
-    if (forceCpu || !self.navigator || !navigator.gpu) return null;
+    if (forceCpu) { diag.gpu = "disabled after an earlier GPU error"; return null; }
+    if (!self.navigator || !navigator.gpu) { diag.gpu = "WebGPU not available in this browser"; return null; }
     const ad = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
-    if (!ad) return null;
-    if (ad.isFallbackAdapter || (ad.info && ad.info.isFallbackAdapter) || /swiftshader|llvmpipe|software|basic render/i.test(((ad.info && (ad.info.description + " " + ad.info.architecture + " " + ad.info.vendor)) || ""))) return null;
-    return { f16: ad.features.has("shader-f16") };
-  } catch { return null; }
+    if (!ad) { diag.gpu = "no WebGPU adapter (graphics driver or browser setting)"; return null; }
+    const info = ad.info || {};
+    const desc = [info.vendor, info.architecture, info.device, info.description].filter(Boolean).join(" ").trim() || "unknown GPU";
+    if (ad.isFallbackAdapter || info.isFallbackAdapter || /swiftshader|llvmpipe|software|basic render/i.test(desc)) { diag.gpu = "software adapter only (" + desc + ")"; return null; }
+    const f16 = ad.features.has("shader-f16");
+    diag.gpu = desc + (f16 ? " · fp16" : " · no fp16");
+    return { f16 };
+  } catch (e) { diag.gpu = "error: " + ((e && e.message) || e); return null; }
 }
 
 /** Carga un modelo en la GPU y mide su velocidad real; si es lento, lo descarta. */
 async function tryGpu(model, dtypeEnc, progress_callback, limitMs) {
-  let p = null;
+  let p = null; const t = { model: model.split("/")[1], enc: dtypeEnc };
   try {
     p = await pipeline("automatic-speech-recognition", model, { device: { encoder_model: "webgpu", decoder_model_merged: "wasm" }, dtype: { encoder_model: dtypeEnc, decoder_model_merged: "q8" }, progress_callback });
     const probe = { language: "english", task: "transcribe", max_new_tokens: 4 };
     await p(new Float32Array(16000), probe);            // 1.ª vez: compila
     const t0 = performance.now();
     await p(new Float32Array(16000), probe);            // 2.ª vez: mide la velocidad real
-    if (performance.now() - t0 > limitMs) throw new Error("GPU slower than expected");
+    t.ms = Math.round(performance.now() - t0);
+    if (t.ms > limitMs) throw new Error(`too slow (${t.ms} ms > ${limitMs} ms)`);
+    t.ok = true; diag.tried.push(t);
     return p;
-  } catch (e) { try { if (p && p.dispose) await p.dispose(); } catch { /* */ } return null; }
+  } catch (e) {
+    t.ok = false; t.err = String((e && e.message) || e).slice(0, 140); diag.tried.push(t);
+    try { if (p && p.dispose) await p.dispose(); } catch { /* */ }
+    return null;
+  }
 }
 
 function getAsr() {
@@ -79,24 +94,30 @@ function getAsr() {
       }
     };
     asrPromise = (async () => {
+      diag.tried = [];
       const gpu = await gpuInfo();
       if (gpu) {
-        // 1) Whisper small en GPU (el más preciso) — solo con fp16 y si los archivos están publicados
-        if (allowSmall && gpu.f16 && await exists(MODEL_SMALL + "/onnx/encoder_model_fp16.onnx.parts.json")) {
-          const p = await tryGpu(MODEL_SMALL, "fp16", progress_callback, 1800);
-          if (p) { mode = "gpu-small"; return p; }
-        }
+        // 1) Whisper small en GPU (el más preciso): fp16 si la GPU lo soporta; si no, encoder q4
+        if (allowSmall) {
+          const enc = gpu.f16 && await exists(MODEL_SMALL + "/onnx/encoder_model_fp16.onnx.parts.json") ? "fp16"
+            : await exists(MODEL_SMALL + "/onnx/encoder_model_q4.onnx") ? "q4" : null;
+          if (enc) { const p = await tryGpu(MODEL_SMALL, enc, progress_callback, 2500); if (p) { mode = "gpu-small"; post({ final: `Whisper small · GPU (${enc})` }); return p; } }
+          else diag.tried.push({ model: "whisper-small", ok: false, err: "model files not published yet" });
+        } else diag.tried.push({ model: "whisper-small", ok: false, err: "disabled in Settings" });
         // 2) Whisper base en GPU
+        const encB = gpu.f16 ? "fp16" : "fp32";
         if (await exists(MODEL + "/onnx/" + (gpu.f16 ? "encoder_model_fp16.onnx" : "encoder_model.onnx"))) {
-          const p = await tryGpu(MODEL, gpu.f16 ? "fp16" : "fp32", progress_callback, 1500);
-          if (p) { mode = gpu.f16 ? "gpu-fp16" : "gpu"; return p; }
+          const p = await tryGpu(MODEL, encB, progress_callback, 1500);
+          if (p) { mode = gpu.f16 ? "gpu-fp16" : "gpu"; post({ final: `Whisper base · GPU (${encB})` }); return p; }
         }
         forceCpu = true;
       }
       // 3) Whisper base en el procesador
       mode = "cpu";
-      return pipeline("automatic-speech-recognition", MODEL, { device: "wasm", dtype: { encoder_model: "q8", decoder_model_merged: "q8" }, progress_callback });
-    })().catch((e) => { asrPromise = null; throw e; });
+      const p = await pipeline("automatic-speech-recognition", MODEL, { device: "wasm", dtype: { encoder_model: "q8", decoder_model_merged: "q8" }, progress_callback });
+      post({ final: "Whisper base · CPU" });
+      return p;
+    })().catch((e) => { asrPromise = null; post({ final: "failed: " + ((e && e.message) || e) }); throw e; });
   }
   return asrPromise;
 }

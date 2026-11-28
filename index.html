@@ -61,7 +61,7 @@
     <!-- COLUMN 1: transcript -->
     <section id="trPanel" class="panel col-transcript layout-orig">
       <div class="panel-head">
-        <h2>Live transcript <span id="prio" class="prio" hidden></span></h2>
+        <h2>Live transcript <span id="prio" class="prio" hidden></span> <span id="engineChip" class="engine-chip" hidden title="Which high-accuracy engine is in use (details in Settings)"></span></h2>
         <div class="head-actions">
           <div id="domainMeter" class="meter">
             <span data-dom="medico" hidden>Medical <b>0%</b></span>
@@ -175,6 +175,7 @@
       <label class="row"><input id="cfgMask" type="checkbox"> Hide SSN and card numbers on screen (click "Show" to reveal)</label>
       <label class="row"><input id="cfgPrecise" type="checkbox"> High-accuracy transcript (Whisper, offline)</label>
       <p class="hint">The fast engine shows text instantly; Whisper re-checks sentences a moment later and corrects them (marked ✓). First use downloads ~100 MB, then it stays saved in the browser.</p>
+      <p id="engineInfo" class="hint">High-accuracy engine: starts when you press Start.</p>
       <label class="row"><input id="cfgSmall" type="checkbox"> Use the larger, more accurate model on GPU (Whisper small, ~330 MB one-time)</label>
       <p class="hint">Only used if your graphics card is fast enough; otherwise the standard model is used automatically.</p>
       <label class="row"><input id="cfgTranslate" type="checkbox"> Live translation (EN ⇄ ES)</label>
@@ -234,6 +235,7 @@
       <div id="vocabTabs" class="seg vocab-tabs">
         <button type="button" data-vt="fix" class="on">Fix transcription</button>
         <button type="button" data-vt="tr">Translate as</button>
+        <button type="button" data-vt="acro">Acronyms</button>
       </div>
 
       <section id="vtFix" class="vt">
@@ -258,6 +260,21 @@
         <div class="row end"><button id="btnSaveTerm" type="button" class="btn primary">Save term</button></div>
         <h3>Saved terms</h3>
         <div id="myTermsList" class="mytermslist"></div>
+      </section>
+
+      <section id="vtAcro" class="vt" hidden>
+        <p class="hint">Acronyms you hear on calls (e.g. <b>DMV</b>, <b>STD</b>, <b>PCP</b>). They are recognized even if the engine writes them letter by letter (“d m v”), highlighted with their meaning, and shown your way in the Spanish translation.</p>
+        <label>Acronym <input id="acroAc" type="text" placeholder="DMV"></label>
+        <label>Stands for (English) <input id="acroFull" type="text" placeholder="Department of Motor Vehicles"></label>
+        <label>In Spanish <input id="acroEs" type="text" placeholder="Departamento de Vehículos Motorizados (DMV)"></label>
+        <label>Meaning (optional) <input id="acroMeaning" type="text" placeholder="Office for driver licenses and vehicle registration"></label>
+        <label>Domain
+          <select id="acroDom"><option value="general">General</option><option value="medico">Medical</option><option value="legal">Legal</option><option value="bancario">Banking</option><option value="seguros">Insurance</option></select>
+        </label>
+        <p id="acroInfo" class="hint"></p>
+        <div class="row end"><button id="btnSaveAcro" type="button" class="btn primary">Save acronym</button></div>
+        <h3>Saved acronyms</h3>
+        <div id="acroList" class="mytermslist"></div>
       </section>
 
       <div class="row end"><button class="btn ghost" value="cancel" formnovalidate>Close</button></div>
