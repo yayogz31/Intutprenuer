@@ -96,6 +96,15 @@ jobs:
             ls -lh "$D/onnx/$f".part*
           done
 
+      - name: Whisper small, encoder q4 (GPUs sin fp16)
+        run: |
+          set -euo pipefail
+          D=models/hf/onnx-community/whisper-small/onnx
+          mkdir -p "$D"
+          if [ -f "$D/encoder_model_q4.onnx" ]; then echo "q4 ya existe"; exit 0; fi
+          curl -fsSL --retry 3 "https://huggingface.co/onnx-community/whisper-small/resolve/main/onnx/encoder_model_q4.onnx" -o "$D/encoder_model_q4.onnx"
+          ls -lh "$D/encoder_model_q4.onnx"
+
       - name: Bergamot (traducción offline ES⇄EN)
         env:
           FORCE: ${{ inputs.force }}
