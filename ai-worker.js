@@ -17,7 +17,7 @@ env.backends.onnx.wasm.numThreads = self.crossOriginIsolated ? Math.max(1, Math.
 
 const MODEL = "onnx-community/whisper-base";
 const MODEL_SMALL = "onnx-community/whisper-small";   // más preciso; solo en equipos con GPU rápida (fp16)
-let asrPromise = null, mode = "cpu", forceCpu = false, allowSmall = true;
+let asrPromise = null, mode = "cpu", forceCpu = false, allowSmall = true, useFast = true;
 const queue = [];
 let busy = false;
 
@@ -146,27 +146,55 @@ async function detectLang(asr, audio) {
   return { lang: diff > 0 ? "en" : "es", margin: Math.abs(diff) };
 }
 
+/** Una sola pasada del codificador (la parte pesada) para detectar el idioma Y transcribir.
+ *  Devuelve el texto, o null si la librería no lo permite (entonces se usa el método de respaldo). */
+async function fastPath(asr, job, secs) {
+  const m = asr.model;
+  if (!m || typeof m._prepare_encoder_decoder_kwargs_for_generation !== "function" || !asr.processor || !asr.tokenizer) return null;
+  const { input_features } = await asr.processor(job.audio);
+  const kw = await m._prepare_encoder_decoder_kwargs_for_generation({ inputs_tensor: input_features, model_inputs: { input_features }, model_input_name: "input_features", generation_config: m.generation_config });
+  const encoder_outputs = kw && kw.encoder_outputs;
+  if (!encoder_outputs) return null;
+  let changed = false;
+  if (job.detect && secs >= 2.5) {
+    // detección de idioma reutilizando el codificador: solo un paso del decodificador (muy barato)
+    try {
+      const gc = m.generation_config || {}, l2i = gc.lang_to_id || {};
+      const sot = gc.decoder_start_token_id ?? 50258, en = l2i["<|en|>"] ?? 50259, es = l2i["<|es|>"] ?? 50262;
+      const r = await m({ encoder_outputs, decoder_input_ids: new Tensor("int64", BigInt64Array.from([BigInt(sot)]), [1, 1]) });
+      const d = r.logits.data, off = d.length - r.logits.dims.at(-1), diff = d[off + en] - d[off + es];
+      const lang = diff > 0 ? "en" : "es"; job.lidMargin = Math.abs(diff);
+      // pasar a español es fácil (margen > 1.5); pasar a inglés exige mucha seguridad (margen > 4)
+      if (lang !== job.lang && job.lidMargin > (lang === "es" ? 1.5 : 4)) { job.lang = lang; changed = true; }
+    } catch { /* sigue con el idioma dado */ }
+    if (job.lidOnly && !changed) return { skip: true };
+  }
+  const ids = await m.generate({ inputs: input_features, encoder_outputs, task: "transcribe", language: job.lang === "en" ? "english" : "spanish", max_new_tokens: Math.min(220, Math.ceil(secs * 7) + 12) });
+  const text = asr.tokenizer.batch_decode(ids, { skip_special_tokens: true })[0] || "";
+  return { text };
+}
+
 async function run(job, retry) {
   const asr = await getAsr();
   const t0 = performance.now();
   const secs = job.audio.length / 16000;
-  // modo Auto: si el idioma es dudoso y la frase es suficientemente larga, Whisper confirma el idioma real
-  if (job.detect && secs >= 2.5) {
-    // solo cambia el idioma si Whisper está muy seguro
-    // pasar a español es fácil (margen > 1.5); pasar a inglés exige mucha seguridad (margen > 4)
-    let changed = false;
-    try {
-      const d = await detectLang(asr, job.audio); job.lidMargin = d.margin;
-      if (d.lang !== job.lang && d.margin > (d.lang === "es" ? 1.5 : 4)) { job.lang = d.lang; changed = true; }
-    } catch { /* sigue con el idioma dado */ }
-    // con trabajo pendiente y frase muy segura: solo se confirma el idioma (si no cambió, no se re-transcribe)
-    if (job.lidOnly && !changed) { self.postMessage({ type: "asr", id: job.id, text: "", lang: job.lang, margin: job.lidMargin || 0, skipped: true }); return; }
+  let out = null;
+  if (useFast) {
+    try { out = await fastPath(asr, job, secs); } catch (e) { useFast = false; out = null; }
   }
-  const out = await asr(job.audio, {
-    task: "transcribe",
-    language: job.lang === "en" ? "english" : "spanish",   // el idioma lo decide la app (Whisper en el navegador no lo detecta)
-    max_new_tokens: Math.min(220, Math.ceil(secs * 7) + 12),
-  });
+  if (out && out.skip) { self.postMessage({ type: "asr", id: job.id, text: "", lang: job.lang, margin: job.lidMargin || 0, skipped: true }); return; }
+  if (!out) {
+    // método de respaldo: detección de idioma y transcripción por separado
+    if (job.detect && secs >= 2.5) {
+      let changed = false;
+      try {
+        const d = await detectLang(asr, job.audio); job.lidMargin = d.margin;
+        if (d.lang !== job.lang && d.margin > (d.lang === "es" ? 1.5 : 4)) { job.lang = d.lang; changed = true; }
+      } catch { /* sigue con el idioma dado */ }
+      if (job.lidOnly && !changed) { self.postMessage({ type: "asr", id: job.id, text: "", lang: job.lang, margin: job.lidMargin || 0, skipped: true }); return; }
+    }
+    out = await asr(job.audio, { task: "transcribe", language: job.lang === "en" ? "english" : "spanish", max_new_tokens: Math.min(220, Math.ceil(secs * 7) + 12) });
+  }
   let text = (out && out.text ? out.text : "").replace(/\s+/g, " ").trim();
   // anotaciones de sonido que Whisper a veces agrega: "(Susurro)", "[Music]", "(risas)"
   text = text.replace(/\s*[\[(][^\])]{1,25}[\])]\s*/g, " ").replace(/\s+/g, " ").trim();
@@ -175,7 +203,7 @@ async function run(job, retry) {
   // "otro, otro, otro" → "otro" (palabras repetidas sin sentido)
   text = text.replace(/\b([\p{L}']+)(?:[,.\s]+\1\b){2,}/giu, "$1");
   if (HALLUCINATIONS.test(text) || isRepetitive(text)) text = "";
-  self.postMessage({ type: "asr", id: job.id, text, lang: job.lang, margin: job.lidMargin || 0, ms: Math.round(performance.now() - t0), mode });
+  self.postMessage({ type: "asr", id: job.id, text, lang: job.lang, margin: job.lidMargin || 0, ms: Math.round(performance.now() - t0), mode, path: useFast ? "single-pass" : "fallback" });
 }
 
 async function pump() {
