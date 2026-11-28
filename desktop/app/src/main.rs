@@ -235,8 +235,12 @@ fn smoke(wav: &str, out: &str) -> i32 {
     let eng = Engine::new(Arc::new(move |e: Event| {
         let mut v = serde_json::to_value(&e).unwrap();
         v["t"] = serde_json::json!(t0.elapsed().as_millis() as u64);
+        if v["type"] != "progress" || v["pct"].as_u64().map(|p| p % 25 == 0).unwrap_or(false) {
+            println!("{v}"); // se ve en la consola del CI aunque la app se cierre
+        }
         ev2.lock().unwrap().push(v);
     }), Some(wav.into()), false);
+    println!("engine ready");
     let r = eng.start(StartOptions { source: Source::Mic, lang: LangMode::Auto, light: false });
     let ok_start = r.is_ok();
     if ok_start {
@@ -271,6 +275,12 @@ fn smoke(wav: &str, out: &str) -> i32 {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    // si algo falla por dentro, el mensaje queda en la memoria del diagnóstico y en la consola
+    std::panic::set_hook(Box::new(|info| {
+        let msg = format!("internal error: {info}");
+        eprintln!("{msg}");
+        inturp_core::engine::record_panic(&msg);
+    }));
     if args.len() >= 4 && args[1] == "--smoke" {
         std::process::exit(smoke(&args[2], &args[3]));
     }

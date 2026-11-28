@@ -280,6 +280,10 @@ impl Engine {
             s.push_str(&format!("Memory (this process): {m} MB\n"));
         }
         s.push_str(&format!("Fast engine: {}\nAccuracy engine: {}\n", self.sh.fast_name.lock().unwrap(), self.sh.acc_name.lock().unwrap()));
+        for p in PANICS.lock().map(|p| p.clone()).unwrap_or_default() {
+            s.push_str(&p);
+            s.push('\n');
+        }
         for l in d.iter() {
             s.push_str(l);
             s.push('\n');
@@ -498,6 +502,14 @@ fn debug_text() -> bool {
 /// Solo pruebas de precisión: no saltar frases aunque se acumule trabajo.
 fn no_skip() -> bool {
     std::env::var("INTURP_TEST_NO_SKIP").is_ok()
+}
+
+/// Errores internos (panics) para el diagnóstico en memoria.
+static PANICS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+pub fn record_panic(msg: &str) {
+    if let Ok(mut p) = PANICS.lock() {
+        p.push(msg.chars().take(500).collect());
+    }
 }
 
 static BUSY: AtomicU64 = AtomicU64::new(0);

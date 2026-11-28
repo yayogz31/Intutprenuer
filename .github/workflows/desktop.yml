@@ -61,6 +61,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "desktop -> C:\\t"
+          cache-on-failure: true
 
       - name: Vulkan SDK (para compilar whisper.cpp con GPU)
         uses: jakoch/install-vulkan-sdk-action@v1
@@ -125,7 +126,9 @@ jobs:
           # 2) arrancar el núcleo: descarga los modelos (una vez, con SHA-256), transcribe el WAV y termina
           $wav = (Resolve-Path desktop/tests/audio/en_seguros.wav).Path
           $out = Join-Path $env:RUNNER_TEMP "smoke.json"
-          $p = Start-Process -FilePath "$dir\Inturpreneur.exe" -ArgumentList "--smoke", "`"$wav`"", "`"$out`"" -Wait -PassThru
+          $so = Join-Path $env:RUNNER_TEMP "smoke.out.txt"; $se = Join-Path $env:RUNNER_TEMP "smoke.err.txt"
+          $p = Start-Process -FilePath "$dir\Inturpreneur.exe" -ArgumentList "--smoke", "`"$wav`"", "`"$out`"" -Wait -PassThru -RedirectStandardOutput $so -RedirectStandardError $se
+          "--- consola de la app ---"; Get-Content $so -Tail 40; Get-Content $se -Tail 40; "---"
           if (-not (Test-Path $out)) { throw ("La app se cerró sin terminar la prueba. Código de salida: 0x{0:X8}" -f $p.ExitCode) }
           $r = Get-Content $out -Raw | ConvertFrom-Json
           "Código de salida: $($p.ExitCode) · frases: $($r.finals) · segundos: $([math]::Round($r.seconds,1))"

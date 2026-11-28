@@ -38,18 +38,33 @@ pub struct GpuInfo {
     pub vram_free_mb: u64,
 }
 
-#[cfg(feature = "vulkan")]
+/// GPUs que whisper.cpp puede usar. Se consulta el registro de dispositivos de ggml (que atrapa los
+/// errores de Vulkan): en un equipo sin driver de video simplemente no hay GPU y se usa el procesador.
+/// (No se usa `whisper_rs::vulkan::list_devices`: llama a Vulkan sin protección y cierra la app si no hay driver.)
 pub fn gpus() -> Vec<GpuInfo> {
-    // whisper.cpp ordena las GPU dedicadas primero
-    std::panic::catch_unwind(whisper_rs::vulkan::list_devices)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|d| GpuInfo { name: d.name, vram_total_mb: (d.vram.total / 1_048_576) as u64, vram_free_mb: (d.vram.free / 1_048_576) as u64 })
-        .collect()
-}
-#[cfg(not(feature = "vulkan"))]
-pub fn gpus() -> Vec<GpuInfo> {
-    Vec::new()
+    use whisper_rs::whisper_rs_sys as sys;
+    let mut out = Vec::new();
+    unsafe {
+        let n = sys::ggml_backend_dev_count();
+        for i in 0..n {
+            let dev = sys::ggml_backend_dev_get(i);
+            if dev.is_null() {
+                continue;
+            }
+            let t = sys::ggml_backend_dev_type(dev);
+            if t != sys::ggml_backend_dev_type_GGML_BACKEND_DEVICE_TYPE_GPU && t != sys::ggml_backend_dev_type_GGML_BACKEND_DEVICE_TYPE_IGPU {
+                continue;
+            }
+            let d = sys::ggml_backend_dev_description(dev);
+            let name = if d.is_null() { "GPU".to_string() } else { std::ffi::CStr::from_ptr(d).to_string_lossy().into_owned() };
+            let (mut free, mut total) = (0usize, 0usize);
+            sys::ggml_backend_dev_memory(dev, &mut free, &mut total);
+            out.push((t, GpuInfo { name, vram_total_mb: (total / 1_048_576) as u64, vram_free_mb: (free / 1_048_576) as u64 }));
+        }
+    }
+    // tarjetas dedicadas primero
+    out.sort_by_key(|(t, _)| if *t == sys::ggml_backend_dev_type_GGML_BACKEND_DEVICE_TYPE_GPU { 0 } else { 1 });
+    out.into_iter().map(|(_, g)| g).collect()
 }
 
 /// Memoria de GPU libre del dispositivo 0 (para medir cuánta VRAM usa el modelo).
