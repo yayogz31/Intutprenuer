@@ -1,0 +1,123 @@
+{
+ "_nota": "Frases de prueba. Cada parte: voz, texto que se dice (say) y texto de referencia (ref) tal como debería escribirse; pause = silencio después (s). digits = todos los dígitos que deben aparecer, en orden.",
+ "en_seguros": {
+  "phone": false,
+  "digits": "4578921470",
+  "parts": [
+   {
+    "v": "en_US-lessac-medium",
+    "say": "Hello, my name is John Smith, and I'm calling about my insurance claim.",
+    "ref": "Hello, my name is John Smith, and I'm calling about my insurance claim.",
+    "pause": 0.9
+   },
+   {
+    "v": "en_US-lessac-medium",
+    "say": "My policy number is four five seven, eight nine two, one.",
+    "ref": "My policy number is 457 892 1.",
+    "pause": 0.8
+   },
+   {
+    "v": "en_US-lessac-medium",
+    "say": "The adjuster said that comprehensive insurance covers the damage to my car, but the deductible is four hundred and seventy dollars.",
+    "ref": "The adjuster said that comprehensive insurance covers the damage to my car, but the deductible is $470.",
+    "pause": 1.0
+   },
+   {
+    "v": "en_US-lessac-medium",
+    "say": "Can you ask the patient if she filed a police report?",
+    "ref": "Can you ask the patient if she filed a police report?",
+    "pause": 0.8
+   }
+  ]
+ },
+ "es_medico": {
+  "phone": false,
+  "digits": "5002121980",
+  "parts": [
+   {
+    "v": "es_MX-claude-high",
+    "say": "Buenos días. Me duele el pecho desde ayer en la noche.",
+    "ref": "Buenos días. Me duele el pecho desde ayer en la noche.",
+    "pause": 0.9
+   },
+   {
+    "v": "es_MX-claude-high",
+    "say": "Estoy tomando metformina de quinientos miligramos dos veces al día, y también ibuprofeno cuando lo necesito.",
+    "ref": "Estoy tomando metformina de 500 miligramos dos veces al día, y también ibuprofeno cuando lo necesito.",
+    "pause": 1.0
+   },
+   {
+    "v": "es_MX-claude-high",
+    "say": "Mi fecha de nacimiento es el doce de marzo de mil novecientos ochenta.",
+    "ref": "Mi fecha de nacimiento es el 12 de marzo de 1980.",
+    "pause": 0.8
+   }
+  ]
+ },
+ "mixto_banco": {
+  "phone": true,
+  "digits": "47825125075",
+  "parts": [
+   {
+    "v": "en_US-ryan-medium",
+    "say": "Thank you for calling. Can you verify the last four digits of your Social Security number?",
+    "ref": "Thank you for calling. Can you verify the last four digits of your Social Security number?",
+    "pause": 0.9
+   },
+   {
+    "v": "es_MX-claude-high",
+    "say": "Sí, claro. Son siete, ocho, dos, cinco.",
+    "ref": "Sí, claro. Son 7, 8, 2, 5.",
+    "pause": 0.9
+   },
+   {
+    "v": "en_US-ryan-medium",
+    "say": "Thank you. Your current balance is one thousand two hundred fifty dollars and seventy-five cents.",
+    "ref": "Thank you. Your current balance is $1,250.75.",
+    "pause": 1.0
+   },
+   {
+    "v": "es_MX-claude-high",
+    "say": "Quiero reportar un cargo que no reconozco en mi tarjeta de crédito.",
+    "ref": "Quiero reportar un cargo que no reconozco en mi tarjeta de crédito.",
+    "pause": 0.8
+   }
+  ]
+ },
+ "legal_pausas": {
+  "phone": true,
+  "digits": "1593020243371555123456",
+  "parts": [
+   {
+    "v": "en_US-lessac-medium",
+    "say": "Your hearing is scheduled for March fifteenth, at nine thirty in the morning.",
+    "ref": "Your hearing is scheduled for March 15th, at 9:30 in the morning.",
+    "pause": 0.9
+   },
+   {
+    "v": "en_US-lessac-medium",
+    "say": "The case number is two zero, two four,",
+    "ref": "The case number is 2024",
+    "pause": 1.4
+   },
+   {
+    "v": "en_US-lessac-medium",
+    "say": "three three, seven one.",
+    "ref": "3371.",
+    "pause": 1.0
+   },
+   {
+    "v": "es_ES-davefx-medium",
+    "say": "Mi número de seguro social es",
+    "ref": "Mi número de seguro social es",
+    "pause": 1.3
+   },
+   {
+    "v": "es_ES-davefx-medium",
+    "say": "cinco, cinco, cinco, doce, tres, cuatro, cinco, seis.",
+    "ref": "5, 5, 5, 12, 3, 4, 5, 6.",
+    "pause": 0.8
+   }
+  ]
+ }
+}

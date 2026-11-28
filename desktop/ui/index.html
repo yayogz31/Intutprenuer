@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Privacy: the security policy (CSP) is set by the app itself: the window can only talk to the app's
+       core and read its local model folder. It cannot connect to the internet. -->
+  <meta name="referrer" content="no-referrer">
+  <title>Inturpreneur</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand" title="Interpreter assistant · runs on your device · nothing recorded">
+      <span class="logo" aria-hidden="true">I</span>
+      <h1>Inturpreneur</h1>
+      <span class="brand-sub">Interpreter workspace</span>
+    </div>
+
+    <div class="controls">
+      <div class="ctl-group">
+        <select id="selLang" title="Language being spoken">
+          <option value="auto">Auto (EN + ES)</option>
+          <option value="en-US">English (US)</option>
+          <option value="es-MX">Spanish (MX)</option>
+          <option value="es-US">Spanish (US)</option>
+          <option value="es-ES">Spanish (ES)</option>
+        </select>
+        <button id="btnSwap" class="btn ghost icon" title="Switch language: ES → EN → Auto (Alt+L)" aria-label="Switch language"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4 3 8l4 4"/><path d="M3 8h14"/><path d="m17 20 4-4-4-4"/><path d="M21 16H7"/></svg></button>
+        <select id="selSource" title="Audio source">
+          <option value="system">System audio (what you hear)</option>
+          <option value="mic">Microphone</option>
+          <option value="mix">System audio + microphone</option>
+        </select>
+      </div>
+      <div class="ctl-group">
+        <button id="btnStart" class="btn start"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg><span>Start</span></button>
+        <button id="btnPause" class="btn pause" disabled><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"/><rect x="14" y="4.5" width="4" height="15" rx="1"/></svg><span>Pause</span></button>
+        <button id="btnStop" class="btn stop" disabled><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg><span>End</span></button>
+      </div>
+      <div class="ctl-group">
+        <button id="btnVocab" class="btn ghost" title="Fix misheard words and set your preferred translations">Vocabulary</button>
+        <span id="status" class="status idle">Idle</span>
+        <span id="timer" class="timer">00:00</span>
+        <button id="btnSettings" class="btn ghost icon" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <div id="notice" class="notice" hidden></div>
+
+  <main id="grid" class="grid t-assist">
+    <div id="sideTabs" class="side-tabs">
+      <button type="button" data-t="assist" class="on">Suggestions &amp; cards</button>
+      <button type="button" data-t="side">Key info &amp; notes<span id="keysDot" class="dot"></span></button>
+    </div>
+
+    <!-- COLUMN 1: transcript -->
+    <section id="trPanel" class="panel col-transcript layout-orig">
+      <div class="panel-head">
+        <h2>Live transcript <span id="prio" class="prio" hidden></span> <span id="engineChip" class="engine-chip" hidden title="Which high-accuracy engine is in use (details in Settings)"></span></h2>
+        <div class="head-actions">
+          <div id="domainMeter" class="meter">
+            <span data-dom="medico" hidden>Medical <b>0%</b></span>
+            <span data-dom="legal" hidden>Legal <b>0%</b></span>
+            <span data-dom="bancario" hidden>Banking <b>0%</b></span>
+            <span data-dom="seguros" hidden>Insurance <b>0%</b></span>
+          </div>
+          <div id="colsMode" class="seg" title="Column layout">
+            <button type="button" data-cols="orig" title="Left: what was said · Right: translation">Original → Translation</button>
+            <button type="button" data-cols="lang">EN | ES</button>
+          </div>
+          <div class="font-ctl" title="Text size">
+            <button id="btnFontDown" type="button" aria-label="Smaller text">A−</button>
+            <button id="btnFontUp" type="button" aria-label="Larger text">A+</button>
+          </div>
+        </div>
+      </div>
+      <div class="cols-head"><span id="colLeft">Original</span><span id="colRight">Translation</span></div>
+      <div class="transcript-wrap">
+        <div id="transcript" class="transcript" aria-live="polite">
+          <p class="empty">Press <b>Start</b> to begin. Nothing is saved: everything is erased when the call ends.</p>
+        </div>
+        <button id="jumpLive" class="jump-live" type="button" hidden>↓ Live</button>
+      </div>
+      <div id="interim" class="trow interim"><div class="cell" data-l="en"></div><div class="cell" data-l="es"></div></div>
+      <div id="ctxStrip" class="ctx-strip" title="Key information and terms from the conversation — click to copy"></div>
+      <form id="simForm" class="simform" autocomplete="off">
+        <input id="simInput" type="text" placeholder="Test without audio — type a sentence and press Enter">
+      </form>
+    </section>
+
+    <!-- COLUMN 2: suggestions + cards -->
+    <section class="panel col-assist">
+      <div class="box box-sugg" data-box="sugg">
+        <div class="panel-head box-head">
+          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev" aria-hidden="true"></span><h2>Suggested responses</h2></button>
+          <small>click = copy</small>
+        </div>
+        <div id="suggestions" class="box-body suggestions">
+          <p class="empty">Suggestions will appear here based on what is said.</p>
+        </div>
+      </div>
+      <div class="box box-cards" data-box="cards">
+        <div class="panel-head box-head">
+          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev" aria-hidden="true"></span><h2>Cards</h2></button>
+          <span class="head-actions">
+            <div id="audience" class="seg" title="Who you are speaking to">
+              <button type="button" data-aud="provider">Provider · EN</button>
+              <button type="button" data-aud="lep">LEP · ES</button>
+            </div>
+            <button id="btnAddCard" class="btn ghost tiny" title="Add your own cards">+ Card</button>
+          </span>
+        </div>
+        <div class="box-tools">
+          <div id="cardTabs" class="tabs"></div>
+          <input id="cardFilter" class="search slim" type="search" placeholder="Filter cards…">
+        </div>
+        <div id="cards" class="box-body cards"></div>
+      </div>
+    </section>
+
+    <!-- COLUMN 3: key information + terminology + notes -->
+    <section class="panel col-side">
+      <div class="box box-keys" data-box="keys">
+        <div class="panel-head box-head">
+          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev" aria-hidden="true"></span><h2>Key information</h2></button>
+          <span class="head-actions"><span id="keyCount" class="badge">0</span> <button id="btnKeysToNotes" class="btn ghost tiny" title="Add all key information to notes">→ Notes</button></span>
+        </div>
+        <div id="keys" class="box-body keys"><p class="empty">Names, numbers, dates, amounts and IDs will appear here, organized by what was asked.</p></div>
+      </div>
+      <div class="box box-terms" data-box="terms">
+        <div class="panel-head box-head">
+          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev" aria-hidden="true"></span><h2>Terminology</h2></button>
+          <span class="head-actions"><span id="termCount" class="badge">0</span> <button id="btnAddTerm" class="btn ghost tiny" title="Fix misheard words and set your preferred translations">Vocabulary</button></span>
+        </div>
+        <div class="box-tools"><input id="glossSearch" class="search slim" type="search" placeholder="Search the glossary…"></div>
+        <div id="glossResults" class="terms gloss-results"></div>
+        <div id="terms" class="box-body terms"><p class="empty">Glossary terms will appear here when they are heard.</p></div>
+      </div>
+      <div class="box box-notes" data-box="notes">
+        <div class="panel-head box-head">
+          <button type="button" class="collapse" aria-label="Collapse or expand"><span class="chev" aria-hidden="true"></span><h2>Notes</h2></button>
+          <button id="btnCopyNotes" class="btn ghost tiny" title="Copy notes to clipboard">Copy</button>
+        </div>
+        <textarea id="notes" class="box-body" spellcheck="false" autocomplete="off" placeholder="Temporary notes (erased when the call ends)"></textarea>
+      </div>
+    </section>
+  </main>
+
+  <!-- Settings -->
+  <dialog id="dlgSettings">
+    <form method="dialog" class="dlg">
+      <h2>Settings</h2>
+      <label>Your name (for cards) <input id="cfgName" type="text"></label>
+      <label>Your interpreter ID <input id="cfgId" type="text"></label>
+      <label class="row"><input id="cfgMask" type="checkbox"> Hide SSN and card numbers on screen (click "Show" to reveal)</label>
+      <h3>Speech engine</h3>
+      <label class="row"><input id="cfgPrecise" type="checkbox"> High-accuracy transcript</label>
+      <p class="hint">Text appears instantly; a moment later the accuracy engine re-checks each sentence and corrects it (marked ✓). Everything runs on this computer.</p>
+      <p id="engineInfo" class="hint">The speech engine starts when you press Start.</p>
+      <label class="row"><input id="cfgLight" type="checkbox"> Light mode — smaller engine on the processor (use it while Blender or Unity is open)</label>
+      <div class="row">
+        <button id="btnFreeGpu" type="button" class="btn ghost tiny" disabled title="Unload the accuracy engine from the graphics card now">Free GPU now</button>
+        <button id="btnCopyDiag" type="button" class="btn ghost tiny">Copy diagnostics</button>
+      </div>
+      <p class="hint">The graphics card is only used while someone is speaking during a call. It is released when you press End, or after 3 minutes in Pause.</p>
+      <textarea id="diagText" class="diag-text" rows="6" readonly hidden></textarea>
+      <label class="row"><input id="cfgTranslate" type="checkbox"> Live translation (EN ⇄ ES)</label>
+      <p id="trInfo" class="hint"></p>
+      <h3>Storage</h3>
+      <p id="storageInfo" class="hint"></p>
+      <div class="row"><button id="btnCleanup" type="button" class="btn ghost tiny" title="Remove leftovers and unused models">Clean up</button></div>
+
+      <h3>Glossary</h3>
+      <p class="hint">Import your vocabulary as CSV (term, translation, definition, domain) separated by comma, semicolon or tab. Domains: medical, legal, banking, insurance, general.</p>
+      <input id="fileGloss" type="file" accept=".csv,.tsv,.txt,.json">
+      <textarea id="pasteGloss" rows="4" placeholder="…or paste the CSV rows here"></textarea>
+      <label class="row"><input id="cfgReplace" type="checkbox"> Replace the base glossary (otherwise entries are added)</label>
+      <div class="row">
+        <button id="btnImport" type="button" class="btn">Import</button>
+        <button id="btnResetGloss" type="button" class="btn ghost">Restore base glossary</button>
+      </div>
+      <p id="glossInfo" class="hint"></p>
+      <div class="row"><button id="btnResetCards" type="button" class="btn ghost">Restore built-in cards</button></div>
+      <p class="hint">Shortcuts: <b>Alt+S</b> start · <b>Alt+P</b> pause · <b>Alt+E</b> end · <b>Alt+L</b> switch language.</p>
+      <div class="row end"><button class="btn start" value="close">Close</button></div>
+    </form>
+  </dialog>
+
+  <!-- New card -->
+  <dialog id="dlgCard">
+    <form id="cardForm" method="dialog" class="dlg">
+      <h2 id="cardDlgTitle">New card</h2>
+      <label>Category (tab) <input id="cardCat" type="text" list="cardCats" placeholder="e.g. Disclosures, Medical, My phrases"></label>
+      <datalist id="cardCats"></datalist>
+      <label>Title <input id="cardTitle" type="text" placeholder="e.g. Recording notice"></label>
+      <label>English text <textarea id="cardEn" rows="3"></textarea></label>
+      <label>Spanish text (for the LEP) <textarea id="cardEs" rows="3"></textarea></label>
+      <label>Keywords (optional, comma separated)
+        <input id="cardKeys" type="text" placeholder="recorded, grabada, statement">
+      </label>
+      <p class="hint">When a keyword is heard on the call, the card shows up as a suggestion. You can use {nombre} (your name) and {id}.</p>
+      <details id="cardBulkBox">
+        <summary>Add several at once (CSV)</summary>
+        <p class="hint">One per line: category;title;English;Spanish;keywords (separate keywords with |)</p>
+        <textarea id="cardBulk" rows="4" placeholder="Disclosures;Recording;This call may be recorded.;Esta llamada puede ser grabada.;recorded|grabada"></textarea>
+      </details>
+      <p id="cardInfo" class="hint"></p>
+      <p class="hint">Your own cards are saved only on this computer.</p>
+      <div class="row end">
+        <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+        <button id="btnResetCard" type="button" class="btn ghost" hidden>Restore original</button>
+        <button id="btnSaveCard" type="button" class="btn start">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Vocabulary: traducciones preferidas + correcciones de transcripción -->
+  <dialog id="dlgTerm">
+    <form id="termForm" method="dialog" class="dlg">
+      <h2>Vocabulary</h2>
+      <p class="hint">Teach the app your words. Everything here is saved only on this computer and applied automatically from now on.</p>
+      <div id="vocabTabs" class="seg vocab-tabs">
+        <button type="button" data-vt="fix" class="on">Fix transcription</button>
+        <button type="button" data-vt="tr">Translate as</button>
+        <button type="button" data-vt="acro">Acronyms</button>
+      </div>
+
+      <section id="vtFix" class="vt">
+        <p class="hint">When the app mishears a word, write what it heard and what it should be (e.g. <b>carrot her → character</b>, <b>three d → 3D</b>). It is corrected in new sentences and in the ones already on screen.</p>
+        <label>Heard (wrong) <input id="fixHeard" type="text" placeholder="carrot her"></label>
+        <label>Should be <input id="fixCorrect" type="text" placeholder="character"></label>
+        <p id="fixInfo" class="hint"></p>
+        <div class="row end"><button id="btnSaveFix" type="button" class="btn primary">Save correction</button></div>
+        <h3>Saved corrections</h3>
+        <div id="fixList" class="mytermslist"></div>
+      </section>
+
+      <section id="vtTr" class="vt" hidden>
+        <p class="hint">Words you want translated your way (e.g. <b>adjuster → perito de seguros</b>). They are highlighted in the transcript and enforced in the live translation, in both directions.</p>
+        <label>English term <input id="termEn" type="text" placeholder="adjuster"></label>
+        <label>Preferred Spanish translation <input id="termEs" type="text" placeholder="perito de seguros"></label>
+        <label>Note / definition (optional) <input id="termNote" type="text" placeholder="Insurance professional who assesses the damage"></label>
+        <label>Domain
+          <select id="termDom"><option value="general">General</option><option value="medico">Medical</option><option value="legal">Legal</option><option value="bancario">Banking</option><option value="seguros">Insurance</option></select>
+        </label>
+        <p id="termInfo" class="hint"></p>
+        <div class="row end"><button id="btnSaveTerm" type="button" class="btn primary">Save term</button></div>
+        <h3>Saved terms</h3>
+        <div id="myTermsList" class="mytermslist"></div>
+      </section>
+
+      <section id="vtAcro" class="vt" hidden>
+        <p class="hint">Acronyms you hear on calls (e.g. <b>DMV</b>, <b>STD</b>, <b>PCP</b>). They are recognized even if the engine writes them letter by letter (“d m v”), highlighted with their meaning, and shown your way in the Spanish translation.</p>
+        <label>Acronym <input id="acroAc" type="text" placeholder="DMV"></label>
+        <label>Stands for (English) <input id="acroFull" type="text" placeholder="Department of Motor Vehicles"></label>
+        <label>In Spanish <input id="acroEs" type="text" placeholder="Departamento de Vehículos Motorizados (DMV)"></label>
+        <label>Meaning (optional) <input id="acroMeaning" type="text" placeholder="Office for driver licenses and vehicle registration"></label>
+        <label>Domain
+          <select id="acroDom"><option value="general">General</option><option value="medico">Medical</option><option value="legal">Legal</option><option value="bancario">Banking</option><option value="seguros">Insurance</option></select>
+        </label>
+        <p id="acroInfo" class="hint"></p>
+        <div class="row end"><button id="btnSaveAcro" type="button" class="btn primary">Save acronym</button></div>
+        <h3>Saved acronyms</h3>
+        <div id="acroList" class="mytermslist"></div>
+      </section>
+
+      <div class="row end"><button class="btn ghost" value="cancel" formnovalidate>Close</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="native.js"></script>
+  <script src="data/glosario.js"></script>
+  <script src="data/tarjetas.js"></script>
+  <script src="data/reglas.js"></script>
+  <script src="keyinfo.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

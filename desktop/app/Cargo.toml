@@ -1,0 +1,21 @@
+[package]
+name = "inturpreneur"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Inturpreneur — interpreter assistant"
+
+[features]
+default = ["gpu"]
+# whisper.cpp con Vulkan (GPU sin CUDA). Sin GPU compatible, usa el procesador automáticamente.
+gpu = ["inturp-core/vulkan"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+inturp-core = { path = "../core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

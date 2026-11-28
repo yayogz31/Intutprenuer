@@ -1,0 +1,12 @@
+[package]
+name = "inturp-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "SOLO PRUEBAS: sirve la interfaz conectada al núcleo para manejarla con Playwright. No forma parte de la app."
+
+[dependencies]
+inturp-core = { path = "../../core" }
+tiny_http = "0.12"
+serde_json = "1"

@@ -1,0 +1,22 @@
+[package]
+name = "inturp-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Núcleo nativo de Inturpreneur: audio, detección de voz, Whisper y modelos."
+
+[features]
+default = []
+# Vulkan: GPU sin instalar CUDA (GTX 1650 Ti). Si no hay GPU compatible, whisper.cpp usa la CPU.
+vulkan = ["whisper-rs/vulkan"]
+
+[dependencies]
+whisper-rs = "0.16"
+cpal = "0.18"
+sha2 = "0.11"
+hound = "3.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+ureq = "3"
+memory-stats = "1"

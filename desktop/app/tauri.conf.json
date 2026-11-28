@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Inturpreneur",
+  "version": "0.1.0",
+  "identifier": "com.inturpreneur.desktop",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self' 'wasm-unsafe-eval' blob:",
+        "worker-src": "'self' blob:",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' data:",
+        "font-src": "'self'",
+        "connect-src": "ipc: http://ipc.localhost models: http://models.localhost",
+        "form-action": "'none'",
+        "base-uri": "'none'",
+        "object-src": "'none'"
+      },
+      "freezePrototype": false
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "publisher": "Inturpreneur",
+    "copyright": "Inturpreneur",
+    "category": "Productivity",
+    "shortDescription": "Interpreter assistant",
+    "longDescription": "Live transcription and translation for phone interpreters. Runs entirely on this computer.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "skip"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "languages": [
+          "English"
+        ],
+        "compression": "lzma",
+        "installerHooks": "./installer-hooks.nsh"
+      }
+    }
+  },
+  "mainBinaryName": "Inturpreneur"
+}
