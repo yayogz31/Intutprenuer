@@ -108,10 +108,14 @@ Claves de `localStorage`: `inturp.cfg`, `inturp.fixes`, `inturp.myterms`, `intur
   - Primero Bergamot dentro de la página, como hoy.
   - Opcional después: un modelo más grande que corra local, como CTranslate2 o un opus-mt mejor. Solo si se mantiene ligero y gratuito.
 - **Actualizaciones.** Toda la app es una sola instalación y nunca hay "versiones" paralelas.
-  - El usuario pulsa **Check for updates** y el updater de Tauri, firmado y publicado en GitHub Releases, reemplaza la app en su mismo lugar.
+  - **Al abrir la app**, revisa una vez si hay una actualización en GitHub Releases. Esto solo descarga información; no envía datos del usuario.
+    - Si hay una, muestra un aviso discreto: **"Update available — Update now / Later"**.
+    - Nunca se actualiza sola ni durante una llamada; solo cuando el usuario acepta.
+    - También existe el botón **Check for updates** en Settings.
+  - El updater de Tauri, firmado, reemplaza la app en su mismo lugar.
   - Solo se baja la app, que es pequeña. Los modelos, el vocabulario, las tarjetas y la configuración se conservan.
   - Nunca se vuelven a descargar modelos.
-  - El updater no revisa automáticamente en segundo plano.
+  - No revisa en segundo plano: solo al abrir la app o con el botón.
 - **Build.** GitHub Actions con `windows-latest` genera el instalador (NSIS o MSI) y lo publica en Releases. El usuario no compila nada.
 
 ### Cero basura en el disco (el usuario lo pidió)
@@ -122,6 +126,9 @@ Claves de `localStorage`: `inturp.cfg`, `inturp.fixes`, `inturp.myterms`, `intur
   3. La configuración del usuario (vocabulario, tarjetas, preferencias), en un solo archivo pequeño.
 - **Actualizaciones:** el instalador descargado va a una carpeta temporal y se **borra** al terminar.
   - Al arrancar, la app limpia cualquier resto de una actualización anterior. No quedan copias de versiones viejas.
+  - **Prioridad principal del usuario: ninguna actualización deja archivos innecesarios.**
+  - Verificarlo en cada build: en el runner de Windows, instalar la versión N, actualizar a N+1 y comparar las carpetas de la app, `%LOCALAPPDATA%` y `%TEMP%` antes y después. Solo puede cambiar la app misma.
+  - Los modelos que dejen de usarse en una versión nueva se borran automáticamente.
 - **Caché de WebView2:** desactivarla o limitarla al mínimo y borrarla al cerrar la app. Nunca contiene datos de llamadas.
 - **Sin logs en disco.** El diagnóstico existe solo en memoria y el usuario lo copia si quiere.
 - **Settings → Storage:** muestra cuánto ocupa cada cosa (app, modelos, configuración) y tiene un botón **Clean up**.
