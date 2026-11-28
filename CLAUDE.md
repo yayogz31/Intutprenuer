@@ -114,6 +114,19 @@ Claves de `localStorage`: `inturp.cfg`, `inturp.fixes`, `inturp.myterms`, `intur
   - El updater no revisa automáticamente en segundo plano.
 - **Build.** GitHub Actions con `windows-latest` genera el instalador (NSIS o MSI) y lo publica en Releases. El usuario no compila nada.
 
+### Cero basura en el disco (el usuario lo pidió)
+
+- Lo único que queda en la laptop:
+  1. La app instalada (~20–30 MB).
+  2. Los modelos en `%LOCALAPPDATA%\Inturpreneur\models`.
+  3. La configuración del usuario (vocabulario, tarjetas, preferencias), en un solo archivo pequeño.
+- **Actualizaciones:** el instalador descargado va a una carpeta temporal y se **borra** al terminar.
+  - Al arrancar, la app limpia cualquier resto de una actualización anterior. No quedan copias de versiones viejas.
+- **Caché de WebView2:** desactivarla o limitarla al mínimo y borrarla al cerrar la app. Nunca contiene datos de llamadas.
+- **Sin logs en disco.** El diagnóstico existe solo en memoria y el usuario lo copia si quiere.
+- **Settings → Storage:** muestra cuánto ocupa cada cosa (app, modelos, configuración) y tiene un botón **Clean up**.
+- **Desinstalar** borra todo, incluidos modelos, caché y configuración. Preguntar solo si conservar el vocabulario y las tarjetas.
+
 ### Recursos del equipo del usuario
 
 Windows 11, GTX 1650 Ti (4 GB VRAM), i5 y 32 GB de RAM.
