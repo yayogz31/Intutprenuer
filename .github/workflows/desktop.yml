@@ -74,6 +74,16 @@ jobs:
         with:
           node-version: 22
 
+      - name: Cargador de Vulkan junto a la app (Khronos, Apache-2.0)
+        # Sin él, Windows no abre la app en equipos sin driver de video con Vulkan. Con él, si no hay GPU,
+        # Vulkan no encuentra dispositivos y la app usa el procesador.
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem $env:VULKAN_SDK -Recurse -Filter vulkan-1.dll | Where-Object { $_.FullName -match "x64|Bin" -and $_.FullName -notmatch "x86|Bin32" } | Select-Object -First 1
+          if (-not $dll) { throw "vulkan-1.dll no encontrado en $env:VULKAN_SDK" }
+          "Usando $($dll.FullName) ($([math]::Round($dll.Length/1KB)) KB)"
+          Copy-Item $dll.FullName desktop/app/vulkan-1.dll
+
       - name: Compilar e instalar en un paquete (NSIS)
         working-directory: desktop/app
         shell: pwsh
@@ -116,6 +126,7 @@ jobs:
           $wav = (Resolve-Path desktop/tests/audio/en_seguros.wav).Path
           $out = Join-Path $env:RUNNER_TEMP "smoke.json"
           $p = Start-Process -FilePath "$dir\Inturpreneur.exe" -ArgumentList "--smoke", "`"$wav`"", "`"$out`"" -Wait -PassThru
+          if (-not (Test-Path $out)) { throw ("La app se cerró sin terminar la prueba. Código de salida: 0x{0:X8}" -f $p.ExitCode) }
           $r = Get-Content $out -Raw | ConvertFrom-Json
           "Código de salida: $($p.ExitCode) · frases: $($r.finals) · segundos: $([math]::Round($r.seconds,1))"
           "RAM del núcleo: $($r.rss_call_mb) MB en llamada → $($r.rss_after_end_mb) MB tras End"
