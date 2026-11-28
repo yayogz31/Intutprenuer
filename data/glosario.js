@@ -314,7 +314,42 @@ window.GLOSARIO_IGNORAR = [
 ];
 
 /* Convierte al formato interno. Los términos marcados arriba siguen buscándose en español. */
-window.GLOSARIO_BASE = window.GLOSARIO_RAW.map(([en, es, dom, d]) => ({
+/* Términos frecuentes que no venían en la lista original (se mantienen aparte para no mezclarlos). */
+window.GLOSARIO_EXTRA = [
+  ["Mortgage / mortgage loan / home loan", "hipoteca, préstamo hipotecario, crédito hipotecario", "b", "Loan to buy a home; the home is the guarantee."],
+  ["Refinance / refinancing", "refinanciar, refinanciamiento", "b", "Replacing a loan with a new one, usually with better terms."],
+  ["Principal", "capital, monto principal", "b", "Original amount of a loan, without interest."],
+  ["Lien", "gravamen, derecho de retención", "b", "Legal claim on property until a debt is paid."],
+  ["Loan", "préstamo, crédito", "b", "Money borrowed that must be repaid with interest."],
+  ["Personal loan", "préstamo personal", "b", "Loan for personal use, not tied to a property."],
+  ["Auto loan / car loan", "préstamo para auto, crédito automotriz", "b", "Loan to buy a vehicle."],
+  ["Credit card", "tarjeta de crédito", "b", "Card to buy with money lent by the bank."],
+  ["Debit card", "tarjeta de débito", "b", "Card that uses the money in your account."],
+  ["Credit limit", "límite de crédito", "b", "Maximum amount you can charge on a credit card."],
+  ["Wire transfer", "transferencia bancaria, giro bancario", "b", "Electronic transfer of money between banks."],
+  ["Direct deposit", "depósito directo", "b", "Payment (e.g. salary) deposited automatically."],
+  ["Unauthorized charge", "cargo no autorizado, cargo no reconocido", "b", "Charge the account holder did not make or approve."],
+  ["Chargeback / dispute", "contracargo, disputa", "b", "Formal request to reverse a card charge."],
+  ["Minimum payment", "pago mínimo", "b", "Smallest amount due to keep the account current."],
+  ["Statement balance", "saldo del estado de cuenta", "b", "Amount owed at the end of the billing period."],
+  ["Identity theft", "robo de identidad", "l", "Someone uses your personal information without permission."],
+  ["Policyholder", "titular de la póliza, asegurado", "s", "Person who owns the insurance policy."],
+  ["Claim number", "número de reclamo, número de reclamación", "s", "Number that identifies an insurance claim."],
+  ["Coverage", "cobertura", "s", "What the insurance policy pays for."],
+  ["Uninsured motorist", "conductor sin seguro, motorista no asegurado", "s", "Coverage when the other driver has no insurance."],
+  ["Rental reimbursement / rental car", "reembolso de auto de alquiler, auto de alquiler", "s", "Coverage that pays for a rental car while yours is repaired."],
+  ["Prior authorization", "autorización previa", "m", "Approval the health plan must give before a service or medicine."],
+  ["Prescription", "receta, receta médica", "m", "Doctor's order for a medicine."],
+  ["Out-of-pocket maximum", "máximo de gastos de bolsillo", "m", "Most you pay in a year before the plan pays 100%."],
+  ["In-network / out-of-network", "dentro de la red, fuera de la red", "m", "Whether a provider has a contract with your health plan."],
+  ["Court date", "fecha de audiencia, fecha de corte", "l", "Date you must appear before the court."],
+  ["Restraining order", "orden de restricción, orden de alejamiento", "l", "Court order to stay away from someone."],
+  ["Emergency contact", "contacto de emergencia", "g", "Person to call in an emergency."],
+  ["Expectations", "expectativas", "g", "What someone hopes or believes will happen."],
+  ["Project", "proyecto", "g", "Planned piece of work with a goal."],
+];
+
+window.GLOSARIO_BASE = window.GLOSARIO_RAW.concat(window.GLOSARIO_EXTRA).map(([en, es, dom, d]) => ({
   t: en, tr: es, d, dom: { m: "medico", l: "legal", b: "bancario", s: "seguros", g: "general" }[dom] || "general",
 }));
 

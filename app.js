@@ -1147,11 +1147,14 @@
     const v = { recs: [], partial: {}, partialAt: 0, partialText: "", seg: null, speaking: false, silentSince: 0, floor: 0.004, chunks: [], samples: 0, pre: [], gain: 1 };
     // audio de la frase en curso (para que Whisper la vuelva a transcribir con más precisión)
     const takeAudio = () => {
-      const chunks = v.chunks, overflow = v.overflow; v.chunks = []; const n = v.samples; v.samples = 0; v.overflow = false;
+      // el audio de la frase termina donde se cerró la frase (v.cut); lo que siguió es el inicio de la siguiente
+      const total = v.samples, cut = v.cut != null && v.cut <= total ? v.cut : total, overflow = v.overflow;
+      const all = new Float32Array(total); let o = 0; for (const c of v.chunks) { all.set(c, o); o += c.length; }
+      const rest = all.subarray(cut);
+      v.chunks = rest.length ? [rest.slice()] : []; v.samples = rest.length; v.cut = null; v.overflow = false;
       // sin Whisper listo, frase muy corta, o frase más larga que la ventana de Whisper → no se corrige
-      if (!cfg.precise || !aiReady || overflow || n < rate * 0.5) return null;
-      const all = new Float32Array(n); let o = 0; for (const c of chunks) { all.set(c, o); o += c.length; }
-      return resampleTo16k(all, rate);
+      if (!cfg.precise || !aiReady || overflow || cut < rate * 0.5) return null;
+      return resampleTo16k(all.slice(0, cut), rate);
     };
     // Modo auto: ambos modelos escuchan; en cada frase gana el que tenga más confianza.
     const decide = () => {
@@ -1217,6 +1220,7 @@
       v.recs.push(r);
     }
     const flush = () => {
+      if (v.cut == null) v.cut = v.samples + Math.round(rate * 0.15);   // punto de corte del audio de esta frase (+150 ms de margen)
       if (auto) {
         if (v.awaiting) return;   // ya se pidió el cierre; esperando a ambos modelos
         v.awaiting = new Set(langs);
@@ -1703,10 +1707,46 @@
       $("btnStop").disabled = false;
     };
 
+    // Buscador: cualquier palabra (aunque no se haya mencionado), tolera errores ("mortgag"), y si no está en el
+    // glosario la traduce con el traductor offline y permite guardarla en tus términos.
+    let searchT, searchSeq = 0;
     $("glossSearch").oninput = (e) => {
-      const q = strip(e.target.value.trim());
-      if (q.length < 2) { $("glossResults").innerHTML = ""; return; }
-      $("glossResults").innerHTML = glossary.filter((g) => strip(`${g.t} ${g.tr} ${g.d}`).includes(q)).slice(0, 30).map((g) => termHTML(g)).join("") || `<p class="empty">No results.</p>`;
+      clearTimeout(searchT);
+      const raw = e.target.value.trim(), q = strip(raw);
+      const box = $("glossResults");
+      if (q.length < 2) { box.innerHTML = ""; return; }
+      const qw = q.split(/\s+/).filter((w) => w.length >= 2);
+      const scoreOf = (g) => {
+        const words = strip(`${g.t} ${g.tr}`).replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean);
+        let sc = 0;
+        for (const w of qw) {
+          if (words.includes(w)) sc += 3;
+          else if (words.some((x) => x.startsWith(w))) sc += 2;
+          else if (w.length >= 5 && words.some((x) => Math.abs(x.length - w.length) <= 2 && lev(x, w) <= 2)) sc += 1;
+          else if (strip(g.d || "").includes(w)) sc += 0.5;
+          else return 0;
+        }
+        if (strip(String(g.t).split(" / ")[0]).startsWith(q) || strip(String(g.tr).split(",")[0]).startsWith(q)) sc += 2;
+        return sc;
+      };
+      const res = glossary.map((g) => [g, scoreOf(g)]).filter((x) => x[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 20).map((x) => x[0]);
+      // si está en el glosario, se muestra su ficha; si no, se traduce con el traductor offline
+      const lookup = !res.length && cfg.translate;
+      box.innerHTML = res.map((g) => termHTML(g)).join("") + (lookup ? `<div id="lookupRow" class="lookup"><span class="empty">Not in the glossary — translating “${esc(raw)}”…</span></div>` : (res.length ? "" : `<p class="empty">No results.</p>`));
+      if (!lookup) return;
+      const seq = ++searchSeq;
+      searchT = setTimeout(async () => {
+        const from = /[ñáéíóú¿¡]/i.test(raw) || detectTextLang(raw + " ") === "es" ? "es" : "en";
+        const t = await translate(raw, from);
+        const row = $("lookupRow");
+        if (seq !== searchSeq || !row) return;
+        if (!t || strip(t) === q) { row.innerHTML = res.length ? "" : `<p class="empty">No results.</p>`; return; }
+        row.innerHTML = `<span class="lk-l">${from === "en" ? "EN → ES" : "ES → EN"}</span> <b>${esc(raw)}</b> → <span class="tr">${esc(t)}</span> <button type="button" class="btn ghost tiny" data-add="1" title="Save it with this (or your own) translation">+ My terms</button>`;
+        row.querySelector("[data-add]").onclick = () => {
+          openVocab("tr");
+          $("termEn").value = from === "en" ? raw : t; $("termEs").value = from === "en" ? t : raw; $("termEs").focus();
+        };
+      }, 350);
     };
 
     $("fileGloss").onchange = async (e) => { const f = e.target.files[0]; if (f) $("pasteGloss").value = await f.text(); };

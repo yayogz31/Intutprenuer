@@ -31,6 +31,12 @@ Botones **Iniciar**, **Pausar/Reanudar** y **Terminar**. Atajos: `Alt+S`, `Alt+P
 
 Si hay tarjeta de video compatible, Whisper la usa; si es débil, usa el procesador.
 
+## Buscador de Terminología
+
+Busca **cualquier palabra**, aunque no se haya mencionado en la llamada. Tolera errores de escritura y palabras incompletas ("mortgag loan" → *Mortgage loan*). Si la palabra no está en el glosario, la traduce con el traductor offline y con **+ My terms** la guardas con esa traducción o con la tuya.
+
+El glosario incluye además un grupo de términos frecuentes que no venían en la lista original (`GLOSARIO_EXTRA` en `data/glosario.js`): mortgage loan, refinance, lien, chargeback, identity theft, policyholder, prior authorization, out-of-pocket maximum, restraining order, etc.
+
 ## Tu vocabulario se respeta en la traducción
 
 Además de tus términos de *Vocabulary*, la traducción respeta los **términos de varias palabras de tu lista de vocabulario** y algunas traducciones integradas, en ambos sentidos. Ejemplos con el traductor offline:

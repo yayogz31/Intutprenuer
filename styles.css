@@ -300,3 +300,9 @@ button.fix:hover { color: var(--tx); border-color: var(--acc); }
 .engine-chip.bad { color: var(--bad); border-color: rgba(229,83,75,.5); }
 .diag-text { width: 100%; font: 12px/1.45 ui-monospace, Consolas, monospace; color: var(--tx2); }
 .diag-text[hidden] { display: none; }
+
+/* búsqueda con traducción */
+.lookup { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; background: var(--s2); border: 1px dashed var(--line2); border-radius: 7px; padding: 6px 9px; font-size: 13px; }
+.lookup .tr { color: var(--acc); }
+.lookup .lk-l { font-size: 10px; font-weight: 700; color: var(--mut); border: 1px solid var(--line2); border-radius: 4px; padding: 0 4px; }
+.lookup .btn { margin-left: auto; }
