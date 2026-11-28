@@ -192,6 +192,7 @@
         <button id="btnResetGloss" type="button" class="btn ghost">Restore base glossary</button>
       </div>
       <p id="glossInfo" class="hint"></p>
+      <div class="row"><button id="btnResetCards" type="button" class="btn ghost">Restore built-in cards</button></div>
       <p class="hint">Shortcuts: <b>Alt+S</b> start · <b>Alt+P</b> pause · <b>Alt+E</b> end · <b>Alt+L</b> switch language.</p>
       <div class="row end"><button class="btn start" value="close">Close</button></div>
     </form>
@@ -200,7 +201,7 @@
   <!-- New card -->
   <dialog id="dlgCard">
     <form id="cardForm" method="dialog" class="dlg">
-      <h2>New card</h2>
+      <h2 id="cardDlgTitle">New card</h2>
       <label>Category (tab) <input id="cardCat" type="text" list="cardCats" placeholder="e.g. Disclosures, Medical, My phrases"></label>
       <datalist id="cardCats"></datalist>
       <label>Title <input id="cardTitle" type="text" placeholder="e.g. Recording notice"></label>
@@ -210,7 +211,7 @@
         <input id="cardKeys" type="text" placeholder="recorded, grabada, statement">
       </label>
       <p class="hint">When a keyword is heard on the call, the card shows up as a suggestion. You can use {nombre} (your name) and {id}.</p>
-      <details>
+      <details id="cardBulkBox">
         <summary>Add several at once (CSV)</summary>
         <p class="hint">One per line: category;title;English;Spanish;keywords (separate keywords with |)</p>
         <textarea id="cardBulk" rows="4" placeholder="Disclosures;Recording;This call may be recorded.;Esta llamada puede ser grabada.;recorded|grabada"></textarea>
@@ -219,6 +220,7 @@
       <p class="hint">Your own cards are saved only in this browser.</p>
       <div class="row end">
         <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+        <button id="btnResetCard" type="button" class="btn ghost" hidden>Restore original</button>
         <button id="btnSaveCard" type="button" class="btn start">Save</button>
       </div>
     </form>

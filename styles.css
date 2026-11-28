@@ -283,3 +283,10 @@ button.fix { border: 1px solid var(--line2); background: transparent; color: var
 .trow:hover button.fix, button.fix:focus-visible { opacity: 1; }
 button.fix:hover { color: var(--tx); border-color: var(--acc); }
 @media (max-width: 1180px) { #btnVocab { display: none; } }
+
+/* tarjetas editables */
+.card .card-acts { position: absolute; top: 5px; right: 6px; display: inline-flex; gap: 3px; opacity: 0; transition: opacity .15s; }
+.card:hover .card-acts, .card:focus-within .card-acts { opacity: 1; }
+.card .card-acts button { background: var(--s1); border: 1px solid var(--line2); color: var(--tx2); border-radius: 4px; font-size: 11px; line-height: 17px; padding: 0 6px; cursor: pointer; }
+.card .card-acts button:hover { color: var(--tx); border-color: var(--acc); }
+.card .title { padding-right: 70px; }

@@ -31,6 +31,14 @@ Botones **Iniciar**, **Pausar/Reanudar** y **Terminar**. Atajos: `Alt+S`, `Alt+P
 
 Si hay tarjeta de video compatible, Whisper la usa; si es débil, usa el procesador.
 
+## Tarjetas editables
+
+Pasa el cursor sobre cualquier tarjeta: **Edit** para cambiar su texto (también las que vienen con la app) y **×** para borrarla (las tuyas) u ocultarla (las de la app). En ⚙ → *Restore built-in cards* vuelves a las originales.
+
+## El español ya no se convierte en inglés
+
+Si el texto del motor rápido es claramente español (o inglés) y tenía buena confianza, Whisper no puede cambiarle el idioma. Si Whisper devuelve la frase en el otro idioma (es decir, la "tradujo"), esa corrección se descarta. Whisper solo corrige el idioma cuando está muy seguro o cuando el motor rápido tenía poca confianza.
+
 ## Vocabulary: la app aprende tus palabras
 
 Botón **Vocabulary** (arriba, o en *Terminology*). Todo se guarda solo en tu navegador y se aplica automáticamente:

@@ -131,7 +131,8 @@ async function run(job, retry) {
   const secs = job.audio.length / 16000;
   // modo Auto: si el idioma es dudoso y la frase es suficientemente larga, Whisper confirma el idioma real
   if (job.detect && secs >= 2.5) {
-    try { const d = await detectLang(asr, job.audio); if (d.margin > 1 && d.lang !== job.lang) job.lang = d.lang; } catch { /* sigue con el idioma dado */ }
+    // solo cambia el idioma si Whisper está muy seguro
+    try { const d = await detectLang(asr, job.audio); job.lidMargin = d.margin; if (d.margin > 2.5 && d.lang !== job.lang) job.lang = d.lang; } catch { /* sigue con el idioma dado */ }
   }
   const out = await asr(job.audio, {
     task: "transcribe",
@@ -139,12 +140,14 @@ async function run(job, retry) {
     max_new_tokens: Math.min(220, Math.ceil(secs * 7) + 12),
   });
   let text = (out && out.text ? out.text : "").replace(/\s+/g, " ").trim();
+  // anotaciones de sonido que Whisper a veces agrega: "(Susurro)", "[Music]", "(risas)"
+  text = text.replace(/\s*[\[(][^\])]{1,25}[\])]\s*/g, " ").replace(/\s+/g, " ").trim();
   // listas de dígitos que Whisper escribe como ordinales: "6th, 7th, 8th" → "6 7 8"
   text = text.replace(/\b\d{1,2}(?:st|nd|rd|th)(?:,?\s+\d{1,2}(?:st|nd|rd|th))+\b/gi, (m) => m.replace(/(st|nd|rd|th)/gi, "").replace(/,/g, ""));
   // "otro, otro, otro" → "otro" (palabras repetidas sin sentido)
   text = text.replace(/\b([\p{L}']+)(?:[,.\s]+\1\b){2,}/giu, "$1");
   if (HALLUCINATIONS.test(text) || isRepetitive(text)) text = "";
-  self.postMessage({ type: "asr", id: job.id, text, lang: job.lang, ms: Math.round(performance.now() - t0), mode });
+  self.postMessage({ type: "asr", id: job.id, text, lang: job.lang, margin: job.lidMargin || 0, ms: Math.round(performance.now() - t0), mode });
 }
 
 async function pump() {

@@ -130,6 +130,7 @@
     const out = [];
     const add = (v) => {
       v = strip(v).replace(/^\s*(to|the|el|la|los|las|un|una)\s+/, "").replace(/[“”"']/g, "").replace(/\s+/g, " ").trim();
+      v = v.replace(/-/g, " ").replace(/\s+/g, " ").trim();   // "no-fault" = "no fault"
       if (v.length < 2) return;
       out.push(v);
       if (v.includes(".")) { const d = v.replace(/\./g, "").replace(/\s+/g, " ").trim(); if (d.length >= 2) out.push(d); }
@@ -172,7 +173,8 @@
     const terms = []; const spans = [];
     if (termRe) {
       termRe.lastIndex = 0; let m;
-      while ((m = termRe.exec(n))) {
+      const nT = n.replace(/-/g, " ");
+      while ((m = termRe.exec(nT))) {
         const e = termIndex.get(m[1]);
         if (e) { terms.push(e); spans.push({ a: m.index, b: m.index + m[0].length, kind: "term", e }); }
       }
@@ -297,7 +299,7 @@
 
   function termHTML(e, n) {
     return `<div class="term ${e.dom}">${n ? `<span class="n">×${n}</span>` : ""}
-      <span class="w">${e.mine ? `<span class="mine" title="Your term">★</span> ` : ""}${esc(e.t)}</span> → <span class="tr">${esc(e.tr || "")}</span>
+      <span class="w">${e.mine ? `<span class="mine" title="Your term">★</span> ` : ""}${esc(String(e.t).split(" / ")[0])}</span> → <span class="tr">${esc(e.tr || "")}</span>
       <div class="d">${esc(e.d || "")}</div></div>`;
   }
   function renderTerms() {
@@ -446,7 +448,15 @@
       const job = aiJobs.get(m.id); aiJobs.delete(m.id);
       if (!job) return;
       job.row.classList.remove("refining");
-      if (m.lang && m.lang !== job.lang && !job.unclear && job.row._lang === job.lang) { flipRowLang(job.row, true); job.lang = m.lang; job.forced = true; }
+      // si el texto del motor rápido es claramente de un idioma, Whisper no puede cambiarlo (evita que "traduzca" el español al inglés)
+      const fastLang = job.part ? detectTextLang(job.part.text) : null;
+      if (m.lang && m.lang !== job.lang && !job.unclear && job.row._lang === job.lang) {
+        const w = (job.part && job.part.vwords) || [];
+        const fastConf = w.length ? w.reduce((t, x) => t + (x.conf || 0), 0) / w.length : 0.5;
+        // se respeta el idioma del motor rápido si su texto es claro y tenía buena confianza, salvo que Whisper esté MUY seguro
+        if (fastLang === job.lang && fastConf >= 0.8 && (m.margin || 0) < 4) { job.keepLang = true; }
+        else { flipRowLang(job.row, true); job.lang = m.lang; job.forced = true; }
+      }
       if (job.unclear) {
         if (m.text && session && job.row.isConnected) { session.count--; handleFinal(m.text, m.lang || job.lang, null, 1, { replace: job.row, refined: true }); }
         else if (job.row.isConnected) { const tg = job.row.querySelector(".unclear-tag"); if (tg) tg.textContent = "Unclear audio"; }
@@ -495,9 +505,11 @@
     if (!session || !job.row.isConnected || !job.part) return;
     const row = job.row, part = job.part;
     const det = detectTextLang(text);
-    if (det && det !== job.lang && row._lang === job.lang && row._parts.length === 1) {
-      flipRowLang(row, true);   // mueve de columna sin volver a pedir Whisper
-      job.lang = det; job.forced = true;
+    const fastLang = detectTextLang(part.text);
+    if (det && det !== job.lang) {
+      // Whisper devolvió el otro idioma: si el motor rápido era claramente de su idioma, Whisper tradujo → se descarta
+      if (job.keepLang || (fastLang === job.lang && !job.forced)) return;
+      if (row._lang === job.lang && row._parts.length === 1) { flipRowLang(row, true); job.lang = det; job.forced = true; }
     }
     text = applyFixes(text);
     if (words(text).join(" ") === words(part.text).join(" ")) return;
@@ -771,7 +783,7 @@
     const box = $("ctxStrip");
     if (!session) { box.innerHTML = ""; return; }
     const keys = session.keys.filter((k) => !k.hidden && k.type !== "number").map((k) => ({ t: k.t, html: `<button type="button" class="chip key-chip ${k.check ? "check" : ""}" data-copy="${esc(k.value)}" title="${esc(k.label)} — click to copy"><b>${esc(k.label)}</b> ${esc(keyValueShown(k))}</button>` }));
-    const terms = [...session.termsSeen.entries()].map(([e, v]) => ({ t: v.t, html: `<button type="button" class="chip term-chip ${e.dom}" data-copy="${esc(e.tr)}" title="${esc(e.d || "")}"><b>${esc(e.t)}</b> ${esc(String(e.tr || "").split(",")[0])}</button>` }));
+    const terms = [...session.termsSeen.entries()].map(([e, v]) => ({ t: v.t, html: `<button type="button" class="chip term-chip ${e.dom}" data-copy="${esc(e.tr)}" title="${esc(e.d || "")}"><b>${esc(String(e.t).split(" / ")[0])}</b> ${esc(String(e.tr || "").split(",")[0])}</button>` }));
     const all = keys.concat(terms).sort((x, y) => y.t - x.t).slice(0, 14);
     box.innerHTML = all.map((x) => x.html).join("");
     box.scrollLeft = 0;
@@ -839,11 +851,22 @@
     c._re = keys.length ? new RegExp(`(?<![\\p{L}\\p{N}])(${keys.map(reEsc).join("|")})(?![\\p{L}\\p{N}])`, "u") : null;
     return c;
   }
+  // ediciones de tarjetas base (o tarjetas base ocultas), guardadas solo en este navegador
+  let cardOverrides = store.get("inturp.cardOverrides", {});
+  const baseKey = (c) => c.cat + "|" + c.titulo;
   function allCards() {
-    if (!cardsCache) cardsCache = (window.TARJETAS || []).map((c) => compileKeys({ ...c })).concat(customCards.map((c, i) => compileKeys({ ...c, _custom: i })));
+    if (!cardsCache) {
+      const base = [];
+      for (const c of window.TARJETAS || []) {
+        const k = baseKey(c), o = cardOverrides[k];
+        if (o && o.hidden) continue;
+        base.push(compileKeys({ ...c, ...(o || {}), _base: k, _edited: !!o }));
+      }
+      cardsCache = base.concat(customCards.map((c, i) => compileKeys({ ...c, _custom: i })));
+    }
     return cardsCache;
   }
-  function saveCustomCards() { store.set("inturp.cards", customCards); cardsCache = null; renderCards(); }
+  function saveCustomCards() { store.set("inturp.cards", customCards); store.set("inturp.cardOverrides", cardOverrides); cardsCache = null; renderCards(); }
   /** To Provider: inglés principal, español como traducción. To LEP: español principal. */
   const primaryOrder = () => (cfg.audience === "lep" ? ["es", "en"] : ["en", "es"]);
   function renderCards() {
@@ -857,7 +880,8 @@
     const q = strip(cardQuery);
     const shown = q ? cards.filter((c) => strip(`${c.titulo} ${c.en || ""} ${c.es || ""} ${c.cat}`).includes(q)) : cards.filter((c) => c.cat === activeCat);
     $("cards").innerHTML = shown.length ? shown.map((c) => `
-      <div class="card" tabindex="0">${c._custom !== undefined ? `<button type="button" class="del" data-del="${c._custom}" title="Delete card">×</button>` : ""}
+      <div class="card" tabindex="0" data-custom="${c._custom !== undefined ? c._custom : ""}" data-base="${c._base ? esc(c._base) : ""}">
+        <span class="card-acts"><button type="button" data-cact="edit" title="Edit this card">Edit</button><button type="button" data-cact="del" title="${c._custom !== undefined ? "Delete card" : "Hide card"}">×</button></span>
         <div class="title">${q ? `<span class="cat">${esc(c.cat)}</span> ` : ""}${esc(c.titulo)}${c.claves ? ` <span class="keys" title="Shows up as a suggestion when heard: ${esc(c.claves)}">auto</span>` : ""}</div>
         <div class="pri" data-copy="${esc(fill(c[p1] || c[p2]))}">${esc(fill(c[p1] || c[p2]))}</div>
         ${c[p1] && c[p2] ? `<div class="sec" data-copy="${esc(fill(c[p2]))}">${esc(fill(c[p2]))}</div>` : ""}</div>`).join("") : `<p class="empty">No cards match “${esc(cardQuery)}”.</p>`;
@@ -1041,7 +1065,7 @@
         scores[lg] = score;
         if (score > bestScore) { bestScore = score; best = lg; }
       }
-      const ambiguous = langs.length > 1 && Math.abs((scores.es || 0) - (scores.en || 0)) < 0.15;
+      const ambiguous = langs.length > 1 && Math.abs((scores.es || 0) - (scores.en || 0)) < 0.3;
       if (!best) return;
       // fragmentos muy cortos: se mantiene el último idioma salvo que el otro sea claramente mejor
       if (best !== lastLang && (seg[lastLang] || []).length && seg[best].length <= 3) {
@@ -1422,9 +1446,31 @@
       const b = e.target.closest("button[data-i]"); if (!b) return;
       myTerms.splice(+b.dataset.i, 1); store.set("inturp.myterms", myTerms); loadGlossary(); renderMyTerms();
     };
-    $("btnAddCard").onclick = () => { $("cardForm").reset(); $("cardCat").value = activeCat; $("cardInfo").textContent = ""; $("dlgCard").showModal(); };
+    let editingCard = null;   // { custom: index } | { base: key } | null (nueva)
+    const openCardDialog = (card) => {
+      $("cardForm").reset(); $("cardInfo").textContent = "";
+      editingCard = card ? (card._custom !== undefined ? { custom: card._custom } : { base: card._base }) : null;
+      $("cardDlgTitle").textContent = card ? "Edit card" : "New card";
+      $("cardBulkBox").hidden = !!card;
+      $("btnResetCard").hidden = !(card && card._edited);
+      if (card) { $("cardCat").value = card.cat; $("cardTitle").value = card.titulo || ""; $("cardEn").value = card.en || ""; $("cardEs").value = card.es || ""; $("cardKeys").value = card.claves || ""; }
+      else $("cardCat").value = activeCat;
+      $("dlgCard").showModal();
+    };
+    $("btnAddCard").onclick = () => openCardDialog(null);
+    $("btnResetCard").onclick = () => {
+      if (editingCard && editingCard.base) { delete cardOverrides[editingCard.base]; saveCustomCards(); $("dlgCard").close(); toast("Card restored to the original"); }
+    };
     $("btnSaveCard").onclick = () => {
       const c = { cat: $("cardCat").value.trim() || "My cards", titulo: $("cardTitle").value.trim(), es: $("cardEs").value.trim(), en: $("cardEn").value.trim(), claves: $("cardKeys").value.trim() };
+      if (editingCard) {
+        if (!c.es && !c.en) { $("cardInfo").textContent = "Write at least the English or Spanish text."; return; }
+        if (!c.titulo) c.titulo = (c.en || c.es).slice(0, 30);
+        if (editingCard.custom !== undefined) customCards[editingCard.custom] = c;
+        else cardOverrides[editingCard.base] = c;
+        activeCat = c.cat; saveCustomCards(); $("dlgCard").close(); toast("Card updated"); editingCard = null;
+        return;
+      }
       const bulk = $("cardBulk").value.trim();
       const items = bulk ? parseCardsCSV(bulk) : (c.es || c.en ? [{ ...c, titulo: c.titulo || (c.en || c.es).slice(0, 30) }] : []);
       if (!items.length) { $("cardInfo").textContent = "Write at least the English or Spanish text (or paste CSV rows)."; return; }
@@ -1449,8 +1495,16 @@
     };
     $("cardTabs").onclick = (e) => { const b = e.target.closest("button"); if (b) { activeCat = b.dataset.cat; cardQuery = ""; $("cardFilter").value = ""; renderCards(); $("cards").scrollTop = 0; } };
     $("cards").onclick = (e) => {
-      const del = e.target.closest("[data-del]");
-      if (del) { if (confirm("Delete this card?")) { customCards.splice(+del.dataset.del, 1); saveCustomCards(); } return; }
+      const act = e.target.closest("[data-cact]");
+      if (act) {
+        const el = act.closest(".card");
+        const card = allCards().find((c) => (el.dataset.custom !== "" && c._custom === +el.dataset.custom) || (el.dataset.base && c._base === el.dataset.base));
+        if (!card) return;
+        if (act.dataset.cact === "edit") { openCardDialog(card); return; }
+        if (card._custom !== undefined) { if (confirm("Delete this card?")) { customCards.splice(card._custom, 1); saveCustomCards(); } }
+        else if (confirm("Hide this card? (You can restore all cards in Settings.)")) { cardOverrides[card._base] = { hidden: true }; saveCustomCards(); }
+        return;
+      }
       const el = e.target.closest("[data-copy]") || e.target.closest(".card")?.querySelector(".pri"); if (el) copy(el.dataset.copy);
     };
     $("transcript").addEventListener("scroll", () => {
@@ -1510,6 +1564,7 @@
     const perfText = () => { const d = detectPerf(); $("perfInfo").textContent = `This device: ${navigator.hardwareConcurrency || "?"} CPU cores${navigator.deviceMemory ? ", ~" + navigator.deviceMemory + " GB RAM" : ""} → ${cfg.perf === "auto" ? "using " + PERF[d].label : PERF[perfKey()].label + " (manual)"}. Lite skips the high-accuracy engine; Balanced only checks unclear sentences.`; };
     $("cfgPerf").value = PERF[cfg.perf] ? cfg.perf : "auto"; perfText();
     $("cfgPerf").onchange = (e) => { cfg.perf = e.target.value; saveCfg(); perfText(); if (P().whisper !== "off" && cfg.precise && state !== "idle") getAi(); };
+    $("btnResetCards").onclick = () => { if (confirm("Restore all built-in cards to their original text (your own cards are kept)?")) { cardOverrides = {}; saveCustomCards(); toast("Built-in cards restored"); } };
     $("cfgSmall").checked = cfg.whisperSmall !== false;
     $("cfgSmall").onchange = (e) => { cfg.whisperSmall = e.target.checked; saveCfg(); toast("Applies the next time the high-accuracy engine loads (reload the page)", 3500); };
     $("cfgMask").checked = cfg.mask;

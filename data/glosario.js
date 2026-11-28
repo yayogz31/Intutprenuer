@@ -175,7 +175,7 @@ window.GLOSARIO_RAW = [
   ["Fingerprints", "huellas dactilares, huellas digitales", "l", "Unique finger marks used for identification."],
   ["Hit and run", "chocar y huir, darse a la fuga", "l", "Leaving the scene after causing an accident."],
   ["Misdemeanor", "delito menor", "l", "Minor crime, with a fine or jail under one year."],
-  ["No fault laws", "leyes independientes de culpabilidad, leyes sin culpa", "s", "Each insurer pays its own insured's injuries regardless of who caused the accident."],
+  ["No fault laws / no-fault / no fault insurance / no fault state", "leyes independientes de culpabilidad, leyes sin culpa", "s", "Each insurer pays its own insured's injuries regardless of who caused the accident."],
   ["Recorded statement", "declaración grabada", "s", "Account by the insured or a witness recorded by the insurer."],
   ["Right of way", "derecho de paso, derecho de vía, preferencia", "s", "Who may go first under traffic rules."],
   ["Robbery", "robo, asalto", "l", "Theft from a person using force or threats."],
