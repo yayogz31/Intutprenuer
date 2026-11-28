@@ -590,6 +590,19 @@ fn continues(prev: &str) -> bool {
     last.chars().last().map(|c| c.is_ascii_digit()).unwrap_or(false) || LINK.contains(&last)
 }
 
+/// ¿La frase empieza otro turno de la conversación? (respuesta o pregunta: nunca se une con la anterior)
+/// Misma regla que la interfaz (app.js → newTurn).
+fn new_turn(t: &str) -> bool {
+    let t = t.trim();
+    if t.ends_with('?') || t.starts_with('¿') {
+        return true;
+    }
+    let first = t.split(|c: char| !c.is_alphanumeric() && c != 'í').next().unwrap_or("").to_lowercase();
+    const W: &[&str] = &["yes", "yeah", "yep", "no", "nope", "okay", "ok", "sure", "right", "correct", "exactly", "hello", "hi", "thank", "thanks",
+        "si", "sí", "claro", "correcto", "exacto", "bueno", "hola", "gracias", "perfecto"];
+    W.contains(&first.as_str())
+}
+
 fn quietest_cut(x: &[f32]) -> usize {
     let win = SR / 10;
     let from = x.len().saturating_sub(SR * 3);
@@ -835,7 +848,7 @@ fn run_fast_final(sh: &Arc<Shared>, m: &mut Model, job: FastJob, gen: u64) {
         if !text.is_empty() {
             // ¿continúa la frase anterior? (pausa corta + la anterior quedó incompleta)
             let join = job.group == 1 && p.group > 0 && p.group_parts < 6 && p.group_len + job.audio.len() < SR * 25
-                && p.last_lang_en == Some(en) && continues(&p.last_text);
+                && p.last_lang_en == Some(en) && continues(&p.last_text) && !new_turn(&text);
             if join {
                 p.group_parts += 1;
                 p.group_len += job.audio.len();
@@ -896,8 +909,8 @@ fn run_fast_final(sh: &Arc<Shared>, m: &mut Model, job: FastJob, gen: u64) {
     };
     let mut q = sh.accq.lock().unwrap();
     if !group_segs.is_empty() {
-        // las partes anteriores de la fila quedan cubiertas por este trabajo
-        q.jobs.retain(|j| !group_segs.contains(&j.seg) || j.forced);
+        // además de la fila completa, esta frase se corrige sola (por si la interfaz no la unió)
+        q.jobs.push_back(AccJob { seg: job.seg, audio: job.audio.clone(), en, margin, forced: false, prompt: prompt.clone(), ended_at, group_segs: Vec::new() });
     }
     // si se acumula trabajo, las frases más viejas se saltan (queda el texto del modelo rápido)
     while q.jobs.len() > 3 && !no_skip() {
@@ -1105,5 +1118,8 @@ mod tests {
         assert!(continues("Mi número de seguro social es."));
         assert!(!continues("Can you ask the patient?"));
         assert!(!continues("I had an accident yesterday."));
+        assert!(new_turn("Can you ask the patient if she filed a police report?"));
+        assert!(new_turn("Sí, claro."));
+        assert!(!new_turn("3371."));
     }
 }

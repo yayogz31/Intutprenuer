@@ -23,14 +23,15 @@ const check = (k, ok, info) => { results.checks[k] = { ok: !!ok, ...(info !== un
   ctx.on("request", (r) => requests.push(r.url()));
   await ctx.addInitScript(() => {
     const call = (cmd, args) => fetch("/invoke/" + cmd, { method: "POST", body: JSON.stringify(args || {}) }).then(async (r) => { const j = await r.json(); if (!r.ok) throw new Error(j.error); return j.result; });
-    window.__TAURI__ = { core: { invoke: call }, event: { listen: (n, cb) => { let next = 0; const loop = async () => { for (;;) { try { const r = await (await fetch("/poll?after=" + next)).json(); next = r.next; for (const ev of r.events) cb({ payload: ev }); } catch { await new Promise((z) => setTimeout(z, 300)); } } }; loop(); return Promise.resolve(() => {}); } } };
+    window.__TAURI__ = { core: { invoke: call }, event: { listen: (n, cb) => { let next = 0; const loop = async () => { for (;;) { try { const r = await (await fetch("/poll?after=" + next)).json(); next = r.next; for (const ev of r.events) { (window.__events = window.__events || []).push(ev); cb({ payload: ev }); } } catch { await new Promise((z) => setTimeout(z, 300)); } } }; loop(); return Promise.resolve(() => {}); } } };
     window.__INTURP_BOOT = { cfg: {}, modelsBase: "/models/", version: "test" };
   });
   const page = await ctx.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
-  await page.goto(BASE + "/");
+  await sleep(400);
+  await page.goto(BASE + "/", { timeout: 60000 });
   await page.waitForSelector("#btnStart:not([disabled])");
   await page.click("#btnStart");
   // texto inmediato: aparece mientras se habla
@@ -59,6 +60,7 @@ const check = (k, ok, info) => { results.checks[k] = { ok: !!ok, ...(info !== un
     check("columna original muestra el español en español", rows.some((r) => r.lang === "ES" && /reconozco|tarjeta|claro/i.test(r.orig)), rows.map((r) => r.lang + ":" + r.orig).join(" | "));
     check("inglés y español detectados", rows.some((r) => r.lang === "EN") && rows.some((r) => r.lang === "ES"));
   }
+  fs.writeFileSync(path.join(shots, `e2e_${name}.events.jsonl`), (await page.evaluate(() => (window.__events || []).map((e) => JSON.stringify(e)).join("\n"))) + "\n");
   await page.screenshot({ path: path.join(shots, `e2e_${name}_1440.png`) });
   // anchos de pantalla: sin desbordes horizontales
   for (const [w, h] of [[1280, 800], [1440, 900], [1920, 1080], [390, 844]]) {

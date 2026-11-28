@@ -646,9 +646,9 @@
   /** Corrección de una fila completa: la frase se pausó a la mitad y el núcleo transcribió todas sus partes
    *  juntas (con el contexto completo, p. ej. un número dictado en partes). Reemplaza las partes de la fila. */
   function applyRowRefinement(segs, text, lang) {
-    let row = null;
-    for (const sg of segs) { const j = aiJobs.get(sg); if (j && j.row && !row) row = j.row; aiJobs.delete(sg); }
-    if (!row) row = [...$("transcript").querySelectorAll(".trow")].find((r) => r._segs && segs.some((sg) => r._segs.includes(sg))) || null;
+    let row;
+    // solo si la fila tiene exactamente esas frases (si la interfaz no las unió, cada una ya tiene su propia corrección)
+    row = [...$("transcript").querySelectorAll(".trow")].find((r) => r._segs && r._segs.length === segs.length && segs.every((sg) => r._segs.includes(sg))) || null;
     if (!row || !session || !row.isConnected || !row._parts) return;
     row.classList.remove("refining", "langcheck");
     if (!text || lang !== row._lang) return;

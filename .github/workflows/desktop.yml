@@ -19,6 +19,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: never
+  # carpeta corta: whisper.cpp (Vulkan) compila una herramienta en rutas muy profundas y Windows
+  # falla con rutas de más de 260 caracteres
+  CARGO_TARGET_DIR: C:\t
 
 jobs:
   # Modelos de traducción para la app (los mismos de la página), publicados una sola vez en Releases.
@@ -57,7 +60,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: desktop
+          workspaces: "desktop -> C:\\t"
 
       - name: Vulkan SDK (para compilar whisper.cpp con GPU)
         uses: jakoch/install-vulkan-sdk-action@v1
@@ -89,8 +92,8 @@ jobs:
       - name: Tamaños
         shell: pwsh
         run: |
-          $exe = Get-Item desktop/target/release/Inturpreneur.exe
-          $setup = Get-ChildItem desktop/target/release/bundle/nsis/*.exe | Select-Object -First 1
+          $exe = Get-Item C:\t\release\Inturpreneur.exe
+          $setup = Get-ChildItem C:\t\release\bundle\nsis\*.exe | Select-Object -First 1
           "Ejecutable: {0:N1} MB" -f ($exe.Length / 1MB)
           "Instalador: {0:N1} MB  ({1})" -f ($setup.Length / 1MB), $setup.Name
           "SETUP=$($setup.FullName)" | Out-File -Append $env:GITHUB_ENV
@@ -139,7 +142,7 @@ jobs:
         with:
           name: Inturpreneur-instalador-windows
           path: |
-            desktop/target/release/bundle/nsis/*.exe
+            C:/t/release/bundle/nsis/*.exe
             smoke.json
           retention-days: 14
 

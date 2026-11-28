@@ -20,7 +20,7 @@ const segs = new Map();
 for (const e of ev) {
   if (e.type === "final") segs.set(e.seg, { fast: e.text, words: e.words, lang: e.lang, group: e.group, lat: e.lat_ms, ref: null });
   if (e.type === "refined" && segs.has(e.seg) && !e.skipped && e.text) {
-    if (e.group_segs && e.group_segs.length > 1) {
+    if (e.group_segs && e.group_segs.length > 1 && e.group_segs.every((g) => segs.has(g) && segs.get(g).group === segs.get(e.group_segs[0]).group)) {
       // corrección de la fila completa: igual que la interfaz, reemplaza todas sus partes
       const parts = e.group_segs.map((g) => segs.get(g)).filter(Boolean);
       const whole = { text: parts.map((p) => p.fast).join(" "), words: parts.flatMap((p) => p.words || []) };
@@ -28,7 +28,7 @@ for (const e of ev) {
       first.rowfix = { text: e.text, whole };
       for (const p of parts.slice(1)) p.covered = first;
       Object.assign(segs.get(e.seg), { rlat: e.lat_ms });
-    } else Object.assign(segs.get(e.seg), { refined: e.text, rlang: e.lang, rlat: e.lat_ms, rms: e.ms });
+    } else if (!(e.group_segs && e.group_segs.length > 1)) Object.assign(segs.get(e.seg), { refined: e.text, rlang: e.lang, rlat: e.lat_ms, rms: e.ms });
   }
 }
 // misma regla que la interfaz (app.js → safeRefinement): la corrección solo se acepta si conserva
