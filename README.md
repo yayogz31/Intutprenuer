@@ -41,6 +41,7 @@ Además de tus términos de *Vocabulary*, la traducción respeta los **términos
 | cobertura contra todo riesgo | coverage against all risks | **comprehensive coverage** |
 | El perito de seguros vendrá mañana | The insurance expert | **The adjuster** |
 | There is a late fee… | una tarifa tardía | **un cargo por pago atrasado** |
+| The LEP needs an interpreter | La LEP necesita… | **El LEP necesita un intérprete** |
 
 Cómo funciona: antes de traducir, cada término se sustituye por una marca que el traductor no toca y luego se pone tu traducción. Las traducciones integradas están en `data/glosario.js` → `TRADUCCIONES_PREFERIDAS`.
 

@@ -7,6 +7,7 @@
  */
 window.GLOSARIO_RAW = [
   // ───────── GENERAL / SERVICIOS / VIAJES ─────────
+  ["LEP / limited English proficient / limited English proficiency", "persona con dominio limitado del inglés, dominio limitado del inglés", "g", "Person whose primary language is not English and who has a limited ability to speak, read or understand it; needs an interpreter."],
   ["Advisor", "asesor, asesora, consejero", "g", "Person who gives guidance or advice."],
   ["Address", "domicilio, dirección", "g", "Place where a person lives or receives mail."],
   ["Amount", "monto, cantidad", "g", "A sum of money or a number of units."],
@@ -359,4 +360,5 @@ window.TRADUCCIONES_PREFERIDAS = [
   { en: "comprehensive insurance / comprehensive coverage", es: "seguro contra todo riesgo, cobertura contra todo riesgo" },
   { en: "full coverage / full coverage insurance", es: "cobertura completa, seguro de cobertura completa" },
   { en: "adjuster / claims adjuster", es: "perito de seguros, perito de seguros" },
+  { en: "LEP / LEP caller / LEP patient / limited English proficient / limited English proficiency", es: "LEP, persona LEP, paciente LEP, una persona con dominio limitado del inglés, dominio limitado del inglés" },
 ];
