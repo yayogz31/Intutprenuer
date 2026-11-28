@@ -120,7 +120,9 @@ Claves de `localStorage`: `inturp.cfg`, `inturp.fixes`, `inturp.myterms`, `intur
 
 ### Cero basura en el disco (el usuario lo pidió)
 
-- **Todo en una sola carpeta visible: `%LOCALAPPDATA%\Inturpreneur`.**
+- **Todo en una sola carpeta visible.** Por defecto es `%LOCALAPPDATA%\Inturpreneur` (disco C:).
+  - El instalador permite elegir otra carpeta u otro disco (por ejemplo `D:\Inturpreneur`).
+  - Todo va a la carpeta elegida, incluidos los modelos. Las rutas nunca van fijas en el código.
   - Ahí van la app, los modelos, la configuración y el perfil de WebView2 (`EBWebView`), dentro de esa misma carpeta.
   - Nada en `%APPDATA%` (Roaming), `ProgramData`, Documentos ni carpetas ocultas aparte.
   - Del sistema, solo la entrada de desinstalación de Windows y el acceso directo, que es lo normal.
@@ -167,6 +169,16 @@ Windows 11, GTX 1650 Ti (4 GB VRAM), i5 y 32 GB de RAM.
 1. **Núcleo funcional.** Tauri, la interfaz empaquetada, captura loopback, whisper.cpp con Vulkan e IPC. Builds en Actions y pruebas automáticas (§6).
 2. **Ajustes reales.** Arreglos tras la prueba del usuario, mejor traducción y descarga de modelos pulida.
 3. **Pulido.** Rediseño Material 3 completo, instalador, updater y textos.
+
+## 4b. Nivel de calidad: app profesional
+
+- Debe sentirse como un producto terminado, no como un prototipo.
+- Arranque rápido, con pantalla de carga clara y ningún error visible ni texto técnico para el usuario.
+- Mensajes en inglés, cortos y comprensibles, con una acción clara: "Microphone not found — Choose device".
+- Si algo falla (GPU, audio, modelo), cae a un respaldo y se lo dice al usuario en lenguaje simple. Nunca se cierra sin explicar.
+- Ícono, nombre y ventana propios, sin "Tauri app" ni títulos genéricos. Recuerda tamaño y posición de la ventana.
+- Atajos de teclado para Start, Pause y End.
+- Instalador firmado si es posible gratis. Si no, explicarle al usuario el aviso de SmartScreen y cómo continuar.
 
 ## 5. Forma de trabajar
 
