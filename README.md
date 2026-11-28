@@ -31,6 +31,19 @@ Botones **Iniciar**, **Pausar/Reanudar** y **Terminar**. Atajos: `Alt+S`, `Alt+P
 
 Si hay tarjeta de video compatible, Whisper la usa; si es débil, usa el procesador.
 
+## Tu vocabulario se respeta en la traducción
+
+Además de tus términos de *Vocabulary*, la traducción respeta los **términos de varias palabras de tu lista de vocabulario** y algunas traducciones integradas, en ambos sentidos. Ejemplos con el traductor offline:
+
+| Original | Traductor solo | Con tu lista |
+|---|---|---|
+| Tengo seguro contra todo riesgo | insurance against all risk | **comprehensive insurance** |
+| cobertura contra todo riesgo | coverage against all risks | **comprehensive coverage** |
+| El perito de seguros vendrá mañana | The insurance expert | **The adjuster** |
+| There is a late fee… | una tarifa tardía | **un cargo por pago atrasado** |
+
+Cómo funciona: antes de traducir, cada término se sustituye por una marca que el traductor no toca y luego se pone tu traducción. Las traducciones integradas están en `data/glosario.js` → `TRADUCCIONES_PREFERIDAS`.
+
 ## ¿Qué motor de precisión estoy usando?
 
 Junto a *Live transcript* aparece un indicador fijo: **Whisper small · GPU** (el más preciso), **Whisper base · GPU**, **Whisper base · CPU** o el avance de la descarga. En ⚙ → *High-accuracy transcript* se explica qué GPU se detectó, qué se probó y **por qué** no se usó el modelo más preciso (por ejemplo, "no WebGPU adapter" o "too slow"). Whisper small ahora también funciona en GPUs sin fp16 (con una versión comprimida q4).

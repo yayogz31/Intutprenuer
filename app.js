@@ -99,7 +99,7 @@
     const mine = myTerms.map((m) => ({ t: m.en, tr: m.es, d: m.note || (m.acronym ? "Your acronym" : "Your preferred translation"), dom: normDom(m.dom), mine: true }));
     glossary = mine.concat(extra ? (extra.replace ? extra.items : base.concat(extra.items)) : base);
     buildIndex();
-    mtCache.clear();
+    mtCache.clear(); prefCache = null;
   }
   /** Cómo traduce la máquina un término suelto (para luego cambiarlo por tu traducción preferida). */
   const mtCache = new Map();
@@ -108,14 +108,45 @@
     if (!mtCache.has(k)) mtCache.set(k, translateRaw(term, from).then((t) => (t || "").replace(/[.!?¡¿"]/g, "").trim()).catch(() => ""));
     return mtCache.get(k);
   }
+  /** Traducciones que se deben respetar: tus términos (Vocabulary), las integradas y los términos de varias
+   *  palabras de tu glosario. Variantes alineadas por posición (inglés "a / b" ↔ español "A, B"). */
+  let prefCache = null;
+  function prefCandidates(from) {
+    if (!prefCache) {
+      const list = []; const seen = new Set();
+      const add = (en, es, src) => {
+        const enV = String(en).split(" / ").map((x) => x.replace(/\(.*?\)/g, "").trim()).filter((x) => x.length > 1);
+        const esV = String(es).split(/[,/]/).map((x) => x.trim()).filter((x) => x.length > 1);
+        if (!enV.length || !esV.length || seen.has(strip(enV[0]))) return;
+        seen.add(strip(enV[0])); list.push({ enV, esV, src });
+      };
+      myTerms.forEach((m) => add(m.en, m.es, "mine"));
+      (window.TRADUCCIONES_PREFERIDAS || []).forEach((b) => add(b.en, b.es, "builtin"));
+      for (const g of window.GLOSARIO_BASE || []) if (g.dom !== "general") add(g.t, g.tr, "gloss");
+      prefCache = list;
+    }
+    const cands = [];
+    for (const e of prefCache) {
+      const srcV = from === "en" ? e.enV : e.esV, dstV = from === "en" ? e.esV : e.enV;
+      srcV.forEach((v, i) => {
+        // del glosario solo se fuerzan términos de 2+ palabras (las palabras sueltas el traductor ya las resuelve bien)
+        if (e.src === "gloss" && v.split(/\s+/).length < 2) return;
+        let want = dstV[i] || dstV[0];
+        if (e.src === "gloss" && from === "es" && !/^[A-Z]{2,}$/.test(want)) want = want.charAt(0).toLowerCase() + want.slice(1);
+        cands.push({ v, want, src: e.src });
+      });
+    }
+    return cands.sort((a, b) => b.v.length - a.v.length);   // los más largos primero ("comprehensive insurance" antes que "insurance")
+  }
   async function enforceMyTerms(src, out, from) {
-    if (!myTerms.length || !out) return out;
+    const cands = prefCandidates(from);
+    if (!cands.length || !out) return out;
     const n = strip(src);
-    for (const m of myTerms) {
-      const enV = String(m.en).split(" / ").map((x) => x.trim()).filter(Boolean);
-      const srcTerm = from === "en" ? (enV.find((v) => new RegExp(`(?<![\\p{L}])${reEsc(strip(v))}(?![\\p{L}])`, "u").test(n)) || enV[0]) : m.es.split(/[,/]/)[0].trim();
-      const want = from === "en" ? m.es.split(/[,/]/)[0].trim() : enV[0];
-      if (!srcTerm || !want || !new RegExp(`(?<![\\p{L}])${reEsc(strip(srcTerm))}(?![\\p{L}])`, "u").test(n)) continue;
+    const done = new Set();
+    for (const c of cands) {
+      if (!looseRe(c.v).test(src) || done.has(strip(c.want))) continue;
+      done.add(strip(c.want));
+      const srcTerm = c.v, want = c.want;
       if (strip(out).includes(strip(want))) continue;
       const mt = await mtRendering(srcTerm, from);
       if (mt && mt.length > 1) {
@@ -415,8 +446,30 @@
       b.translate({ from: "en", to: "es", text: "hello", html: false }).catch(() => {});
     }).catch(() => {});
   }
+  /** Regex que encuentra un término sin importar acentos ni mayúsculas ("cobertura" = "cobertúra"). */
+  function looseRe(term) {
+    const map = { a: "[aáàä]", e: "[eéèë]", i: "[iíìï]", o: "[oóòö]", u: "[uúùü]", n: "[nñ]" };
+    const body = strip(term).trim().split("").map((ch) => (/\s/.test(ch) ? "[\\s-]+" : map[ch] || reEsc(ch))).join("").replace(/(\[\\s-\]\+)+/g, "[\\s-]+");
+    return new RegExp(`(?<![\\p{L}\\p{N}])${body}(?![\\p{L}\\p{N}])`, "giu");
+  }
+  /** Traducción con tus términos preferidos: antes de traducir, cada término se cambia por una marca (ZX1, ZX2…)
+   *  que el traductor deja intacta; después la marca se reemplaza por tu traducción. Si se perdiera una marca,
+   *  se traduce normal y se corrige con el método anterior. */
   async function translate(text, from) {
     if (!cfg.translate || !text) return null;
+    const holders = []; let src = text;
+    for (const c of prefCandidates(from)) {
+      if (holders.length >= 6) break;
+      if (looseRe(c.v).test(src)) { const tok = "ZX" + (holders.length + 1); src = src.replace(looseRe(c.v), tok); holders.push({ tok, want: c.want }); }
+    }
+    if (holders.length) {
+      let out = await translateRaw(src, from);
+      if (out && holders.every((h) => new RegExp(`\\b${h.tok}\\b`, "i").test(out))) {
+        for (const h of holders) out = out.replace(new RegExp(`\\b${h.tok}\\b`, "gi"), h.want);
+        if (from === "es") out = out.replace(/\b([Aa]) (?=[aeiouAEIOU])/g, "$1n ");   // "a adjuster" → "an adjuster"
+        return out;
+      }
+    }
     const out = await translateRaw(text, from);
     return out ? enforceMyTerms(text, out, from) : out;
   }

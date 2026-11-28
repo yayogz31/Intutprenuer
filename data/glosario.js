@@ -239,7 +239,7 @@ window.GLOSARIO_RAW = [
   ["Collision", "colisión, choque", "s", "The vehicle hitting another car or object."],
   ["Collision coverage", "cobertura contra choques, cobertura de colisión", "s", "Pays for damage to your car in a crash, regardless of fault."],
   ["Compact", "compacto", "s", "Small car size (e.g. when renting)."],
-  ["Comprehensive coverage", "cobertura contra todo riesgo, cobertura amplia", "s", "Covers non-collision damage: theft, hail, fire, vandalism."],
+  ["Comprehensive coverage / comprehensive insurance", "cobertura contra todo riesgo, seguro contra todo riesgo, cobertura amplia", "s", "Covers non-collision damage: theft, hail, fire, vandalism."],
   ["Crashed", "se estrelló, chocó", "s", "Had a collision."],
   ["Damages", "daños", "s", "Physical or property harm; also the compensation for it."],
   ["Debris", "escombros", "s", "Pieces left after damage."],
@@ -249,7 +249,7 @@ window.GLOSARIO_RAW = [
   ["Drive in facilities", "centro de inspecciones", "s", "Place where the insurer inspects the vehicle in person."],
   ["Estimate", "presupuesto, cotización, cálculo aproximado, estimado", "s", "Calculated cost of the repair."],
   ["Fender", "guardafangos, salpicadera", "s", "Body panel above the wheel."],
-  ["Full coverage", "cobertura completa", "s", "Policy with liability, collision and comprehensive coverage."],
+  ["Full coverage / full coverage insurance", "cobertura completa, seguro de cobertura completa", "s", "Policy with liability, collision and comprehensive coverage."],
   ["Homeowner", "propietario de una casa, propietario de una vivienda, dueño de casa, casa propia", "s", "Person who owns the home."],
   ["Homeowners insurance", "seguro para viviendas, seguro de casa, seguro de hogar", "s", "Insurance covering the house and belongings."],
   ["Horn", "bocina, sonar la bocina, claxon, to honk", "s", "Device used to make a warning sound."],
@@ -350,3 +350,13 @@ window.KEYWORDS = {
     "inundacion", "flood", "incendio", "fire", "granizo", "hail", "techo", "roof", "agent", "agente de seguros"
   ]
 };
+
+/* Traducciones preferidas integradas (se aplican a la traducción automática en ambos sentidos,
+   igual que Vocabulary → Translate as). Las variantes van alineadas por posición:
+   inglés "a / b" ↔ español "A, B" (a↔A, b↔B). Además, los términos de varias palabras del glosario
+   se aplican automáticamente. */
+window.TRADUCCIONES_PREFERIDAS = [
+  { en: "comprehensive insurance / comprehensive coverage", es: "seguro contra todo riesgo, cobertura contra todo riesgo" },
+  { en: "full coverage / full coverage insurance", es: "cobertura completa, seguro de cobertura completa" },
+  { en: "adjuster / claims adjuster", es: "perito de seguros, perito de seguros" },
+];
